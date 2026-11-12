@@ -1,0 +1,36 @@
+decompilation-evidence.json
+mechanics.json
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Xcode
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+*.moved-aside
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# App archives and debug symbols
+*.xcarchive
+*.dSYM
+*.dSYM.zip
+*.ipa
+
+# Local build output and release packages
+.cache/
+*.app/
+dist/
+*.dmg
+*.log

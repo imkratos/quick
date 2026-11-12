@@ -1,0 +1,67 @@
+name: Build and release DMG
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate release tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'Release tags must use vX.Y.Z, for example v1.0.0.' >&2
+            exit 1
+          fi
+          echo "APP_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Check toolchain and mechanics
+        run: |
+          xcodebuild -version
+          swift --version
+          swiftc Sources/Mechanics.swift checks/mechanics-check.swift -o "$RUNNER_TEMP/mechanics-check"
+          "$RUNNER_TEMP/mechanics-check"
+
+      - name: Build and verify DMG
+        run: bash scripts/package-dmg.sh "$APP_VERSION"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Qucik-${{ env.APP_VERSION }}-macos-arm64
+          path: |
+            dist/*.dmg
+            dist/*.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "Qucik $TAG" --generate-notes
+          fi
+          gh release upload "$TAG" \
+            "dist/Qucik-$APP_VERSION-macos-arm64.dmg" \
+            "dist/Qucik-$APP_VERSION-macos-arm64.dmg.sha256" --clobber
