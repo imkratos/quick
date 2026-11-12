@@ -195,7 +195,7 @@ final class Store: ObservableObject {
         AXUIElementPerformAction(window,kAXRaiseAction as CFString)
         AXUIElementSetAttributeValue(window,kAXFocusedAttribute as CFString,kCFBooleanTrue)
     }
-    var overlayHeight: CGFloat { 148 + max(0, saved.size - 0.7) * 22 }
+    var overlayHeight: CGFloat { 126 + saved.size * 32 }
     func present() {
         guard enabled, !silentNow else { return }
         if sessionApps == nil { sessionApps = availableApps }
@@ -204,11 +204,25 @@ final class Store: ObservableObject {
             let p = NSPanel(contentRect: .zero, styleMask: [.borderless,.nonactivatingPanel], backing: .buffered, defer: false)
             p.hidesOnDeactivate = false; p.isReleasedWhenClosed = false
             p.level = .statusBar; p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true
-            p.collectionBehavior = [.canJoinAllSpaces,.fullScreenAuxiliary]; p.contentView = NSHostingView(rootView: SwitchBar(store:self, compact:false)); overlay = p
+            p.collectionBehavior = [.canJoinAllSpaces,.fullScreenAuxiliary]; overlay = p
+        }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency || NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast {
+            overlay?.contentView = NSHostingView(rootView:SwitchBar(store:self,compact:true))
+        } else {
+            // Put the glass at the window root so its backdrop is the desktop, not another hosting layer.
+            let glass = NSGlassEffectView()
+            glass.cornerRadius = 26
+            let transparency = saved.glassTransparency ?? .high
+            glass.style = transparency == .high ? .clear : .regular
+            glass.tintColor = transparency == .low ? NSColor.windowBackgroundColor.withAlphaComponent(0.35) : nil
+            let hosting = NSHostingView(rootView:SwitchBar(store:self,compact:false))
+            hosting.sizingOptions = []
+            glass.contentView = hosting
+            overlay?.contentView = glass
         }
         let point = NSEvent.mouseLocation
         let screen = (saved.activeScreen ? NSScreen.screens.first { $0.frame.contains(point) } : NSScreen.main) ?? NSScreen.screens[0]
-        let width = min(max(320, CGFloat(max(apps.count,1)) * (78 + saved.size * 24) + 40), screen.visibleFrame.width - 60)
+        let width = min(max(apps.isEmpty ? 280 : 0, CGFloat(apps.count) * (82 + saved.size * 32) + 16), screen.visibleFrame.width - 60)
         let height = overlayHeight
         let area = screen.visibleFrame
         let y = saved.position == "底部" ? area.minY + 40 : saved.position == "顶部" ? area.maxY - height - 40 : area.minY + (area.height-height)*saved.y
@@ -364,63 +378,103 @@ struct AppTile: View {
     let entry: Entry; var scale = 0.7; var action: ()->Void
     var body: some View {
         Button(action:action) {
-            VStack(spacing:9) {
+            VStack(spacing:7) {
                 Image(nsImage:NSWorkspace.shared.icon(forFile:entry.path))
                     .resizable().interpolation(.high)
-                    .frame(width:38 + scale * 22,height:38 + scale * 22)
-                    .shadow(color:.black.opacity(0.14),radius:4,y:3)
-                Text(entry.name).font(.system(size:11,weight:.medium))
+                    .frame(width:56 + scale * 32,height:56 + scale * 32)
+                Text(entry.name).font(.system(size:12,weight:.medium))
                     .lineLimit(1).truncationMode(.middle).frame(maxWidth:.infinity)
                 Text(entry.key.isEmpty ? "—" : entry.key)
-                    .font(.system(size:10,weight:.semibold,design:.rounded))
-                    .foregroundStyle(Color.secondary)
-                    .frame(width:24,height:19)
-                    .background(Color.primary.opacity(0.06),in:RoundedRectangle(cornerRadius:6))
+                    .font(.system(size:11,weight:.medium))
+                    .foregroundStyle(.secondary)
+                    .frame(height:16)
             }
-            .frame(width:66 + scale * 24).padding(.vertical,12).padding(.horizontal,3)
-            .contentShape(RoundedRectangle(cornerRadius:18))
-        }.buttonStyle(.plain)
+            .frame(width:74 + scale * 32).padding(.vertical,4).padding(.horizontal,2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(entry.name)
+        .accessibilityValue(entry.key.isEmpty ? "" : "快捷键 \(entry.key)")
     }
 }
-struct SwitchBarBackground: NSViewRepresentable {
+struct SwitchBarGlass<Content: View>: NSViewRepresentable {
     var transparency: GlassTransparency
+    var content: Content
     func makeNSView(context: Context) -> NSGlassEffectView {
-        let view = NSGlassEffectView()
-        view.cornerRadius = 28
-        return view
+        let glass = NSGlassEffectView()
+        glass.cornerRadius = 26
+        let hosting = NSHostingView(rootView:content)
+        hosting.sizingOptions = []
+        glass.contentView = hosting
+        return glass
     }
-    func updateNSView(_ view: NSGlassEffectView, context: Context) {
-        view.style = transparency == .high ? .clear : .regular
-        view.tintColor = transparency == .low ? NSColor.windowBackgroundColor.withAlphaComponent(0.35) : nil
+    func updateNSView(_ glass: NSGlassEffectView, context: Context) {
+        // Embed the icons inside the native material so AppKit composites one glass surface.
+        (glass.contentView as? NSHostingView<Content>)?.rootView = content
+        glass.style = transparency == .high ? .clear : .regular
+        glass.tintColor = transparency == .low ? NSColor.windowBackgroundColor.withAlphaComponent(0.35) : nil
     }
 }
 struct SwitchBar: View {
     @ObservedObject var store: Store; var compact: Bool
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
+    private let shape = RoundedRectangle(cornerRadius:26,style:.continuous)
     var body: some View {
-        VStack(spacing:0) {
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal,showsIndicators:false) {
-                    HStack(spacing:6) {
-                        if store.apps.isEmpty {
-                            Text("暂无 App，请在设置中添加").font(.callout).foregroundStyle(.secondary).frame(minWidth:260).frame(height:118)
-                        }
-                        ForEach(Array(store.apps.enumerated()),id:\.element.id) { i,a in
-                            AppTile(entry:a,scale:store.saved.size) { store.activate(a) }
-                                .id(i)
-                        }
-                    }.padding(.horizontal,14).padding(.vertical,6)
-                }
-                .onChange(of:store.selected) { _, index in withAnimation(.easeOut(duration:0.16)) { proxy.scrollTo(index,anchor:.center) } }
+        if !compact {
+            content
+        } else if reduceTransparency || contrast == .increased {
+            content
+                .background(Color(nsColor:.windowBackgroundColor),in:shape)
+                .overlay { shape.strokeBorder(.primary.opacity(contrast == .increased ? 0.5 : 0.12),lineWidth:1) }
+        } else {
+            SwitchBarGlass(transparency:store.saved.glassTransparency ?? .high,content:content)
+                .frame(height:store.overlayHeight)
+        }
+    }
+    private var content: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal,showsIndicators:false) {
+                HStack(spacing:4) {
+                    if store.apps.isEmpty {
+                        Text("暂无 App，请在设置中添加").font(.callout).foregroundStyle(.secondary).frame(minWidth:260).frame(height:118)
+                    }
+                    ForEach(Array(store.apps.enumerated()),id:\.element.id) { i,a in
+                        AppTile(entry:a,scale:store.saved.size) { store.activate(a) }
+                            .id(i)
+                    }
+                }.padding(.horizontal,10).padding(.vertical,6)
+            }
+            .onChange(of:store.selected) { _, index in
+                withAnimation(reduceMotion ? nil : .spring(response:0.3,dampingFraction:1)) { proxy.scrollTo(index,anchor:.center) }
             }
         }
         .frame(maxWidth:.infinity).frame(height:store.overlayHeight)
-        .background {
-            if reduceTransparency {
-                RoundedRectangle(cornerRadius:28).fill(Color(nsColor:.windowBackgroundColor))
-            } else {
-                SwitchBarBackground(transparency:store.saved.glassTransparency ?? .medium)
-            }
+    }
+}
+struct SettingsBackdrop: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .underWindowBackground
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        return view
+    }
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+struct SettingsGlass: ViewModifier {
+    var cornerRadius: CGFloat = 22
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius:cornerRadius,style:.continuous)
+        if reduceTransparency || contrast == .increased {
+            content
+                .background(Color(nsColor:.windowBackgroundColor),in:shape)
+                .overlay { shape.strokeBorder(.primary.opacity(contrast == .increased ? 0.5 : 0.12),lineWidth:1) }
+        } else {
+            content.glassEffect(.regular,in:shape)
         }
     }
 }
@@ -431,21 +485,91 @@ struct ContentView: View {
     @State var subpage="通用"; @State var profileName="新配置"; @State var dragID: String?
     var body: some View {
         HStack(spacing:0) {
-            VStack(alignment:.leading,spacing:6) {
-                HStack(spacing:10) { Image(nsImage:AppArtwork.icon).resizable().frame(width:36,height:36); VStack(alignment:.leading,spacing:2) { Text("quick").font(.headline); Text("Liquid Glass").font(.caption).foregroundStyle(.secondary) } }.padding(.horizontal,12).padding(.top,30).padding(.bottom,23)
-                ForEach(pages,id:\.0) { page,icon in Button { store.page=page } label: { Label(page,systemImage:icon).font(.system(size:13,weight:store.page==page ? .semibold : .regular)).frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,12).padding(.vertical,10).background(store.page==page ? Color.accentColor.opacity(0.17) : .clear,in:RoundedRectangle(cornerRadius:9)).contentShape(Rectangle()) }.buttonStyle(.plain) }
-                Spacer()
-                HStack { Circle().fill(store.enabled ? .green : .gray).frame(width:7,height:7); Text(store.enabled ? "已启用" : "已暂停").font(.caption); Spacer(); Toggle("启用",isOn:$store.enabled).labelsHidden().toggleStyle(.switch).controlSize(.mini) }.padding(12).glassEffect(.regular,in:RoundedRectangle(cornerRadius:12))
-                Text("按住 \(store.saved.modifier) 即刻切换").font(.system(size:10)).foregroundStyle(.secondary).padding(.horizontal,8).padding(.top,8)
-            }.padding(14).frame(width:177).background(.ultraThinMaterial)
-            Divider()
+            VStack(alignment:.leading,spacing:8) {
+                HStack(spacing:10) {
+                    Image(nsImage:AppArtwork.icon).resizable().frame(width:38,height:38)
+                    VStack(alignment:.leading,spacing:3) {
+                        Text("quick").font(.system(size:18,weight:.semibold))
+                        Text("应用快捷切换").font(.system(size:11)).foregroundStyle(.secondary)
+                    }
+                }.padding(.horizontal,10).padding(.top,12).padding(.bottom,20)
+                ForEach(pages,id:\.0) { page,icon in
+                    Button { store.page=page } label: {
+                        Label {
+                            Text(page).frame(maxWidth:.infinity,alignment:.leading)
+                        } icon: {
+                            Image(systemName:icon).frame(width:20)
+                        }
+                        .font(.system(size:13,weight:store.page==page ? .semibold : .medium))
+                        .padding(.horizontal,12).padding(.vertical,11)
+                        .background {
+                            if store.page == page {
+                                RoundedRectangle(cornerRadius:12,style:.continuous)
+                                    .fill(Color.accentColor.opacity(0.14))
+                            }
+                        }
+                        .contentShape(RoundedRectangle(cornerRadius:12,style:.continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(page)
+                    .accessibilityAddTraits(store.page == page ? .isSelected : [])
+                }
+                Spacer(minLength:20)
+                HStack {
+                    Circle().fill(store.enabled ? .green : .secondary).frame(width:6,height:6)
+                    Text(store.enabled ? "已启用" : "已暂停").font(.system(size:12,weight:.medium))
+                    Spacer()
+                    Toggle("启用切换器",isOn:$store.enabled).labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                }.padding(.horizontal,10).padding(.vertical,8)
+                Text("按住 \(store.saved.modifier) 即刻切换")
+                    .font(.system(size:11)).foregroundStyle(.secondary).padding(.horizontal,10)
+                Button { NSApp.terminate(nil) } label: {
+                    Label("退出 quick",systemImage:"power")
+                        .font(.system(size:12,weight:.medium))
+                        .frame(maxWidth:.infinity)
+                        .padding(.vertical,4)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .accessibilityIdentifier("quick.quit")
+                .help("退出 quick（⌘Q）")
+                .padding(.top,10)
+            }
+            .padding(14).frame(width:184)
+            .modifier(SettingsGlass(cornerRadius:24))
+            .padding(.leading,12).padding(.vertical,12)
             VStack(alignment:.leading,spacing:0) {
-                HStack { VStack(alignment:.leading,spacing:5) { Text(store.page).font(.system(size:25,weight:.bold)); Text(subtitle).font(.system(size:12)).foregroundStyle(.secondary) }; Spacer(); Button { store.present() } label:{ Label("预览切换器",systemImage:"play.fill") }.buttonStyle(.glass).controlSize(.large) }.padding(28)
-                Divider().opacity(0.5)
-                ScrollView { VStack(alignment:.leading,spacing:20) { pageContent }.padding(28).frame(maxWidth:.infinity,alignment:.leading) }
-                HStack { Image(systemName:"keyboard"); Text("\(store.saved.modifier) + 对应按键"); Spacer(); Text("macOS 原生 · Liquid Glass") }.font(.system(size:11)).foregroundStyle(.secondary).padding(.horizontal,28).padding(.vertical,14)
-            }.frame(maxWidth:.infinity).background(Color(nsColor:.windowBackgroundColor).opacity(0.88))
-        }.frame(minWidth:860,minHeight:650)
+                HStack(alignment:.center,spacing:20) {
+                    VStack(alignment:.leading,spacing:6) {
+                        Text(store.page).font(.system(size:26,weight:.bold))
+                        Text(subtitle).font(.system(size:12)).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength:0)
+                    Button { store.present() } label: {
+                        Label("预览切换器",systemImage:"play.fill")
+                    }.buttonStyle(.glass).controlSize(.large)
+                }.padding(.horizontal,28).padding(.top,28).padding(.bottom,20)
+                ScrollView {
+                    GlassEffectContainer(spacing:20) {
+                        VStack(alignment:.leading,spacing:20) { pageContent }
+                            .padding(.horizontal,28).padding(.vertical,12)
+                            .frame(maxWidth:.infinity,alignment:.leading)
+                    }
+                }
+                HStack(spacing:7) {
+                    Image(systemName:"keyboard")
+                    Text("\(store.saved.modifier) + 对应按键")
+                    Spacer()
+                    Text("quick")
+                }
+                .font(.system(size:11)).foregroundStyle(.secondary)
+                .padding(.horizontal,28).padding(.vertical,16)
+            }.frame(maxWidth:.infinity)
+        }
+        .background { SettingsBackdrop().ignoresSafeArea() }
+        .buttonStyle(.bordered)
+        .toggleStyle(.switch)
+        .frame(minWidth:860,minHeight:650)
         .onChange(of: shortcutFocused) { _, focused in store.editingShortcut = focused }
         .onAppear { store.refreshLoginItemStatus() }
         .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in store.refreshLoginItemStatus() }
@@ -453,20 +577,27 @@ struct ContentView: View {
         .alert("提示",isPresented:Binding(get:{!store.message.isEmpty},set:{if !$0 {store.message=""}})) { Button("好") {store.message=""} } message:{ Text(store.message) }
     }
     var subtitle: String { switch store.page { case "配置":return "为每一个 App，安排一个顺手的快捷键。"; case "外观":return "让切换器融入你的桌面。"; case "静默模式":return "专注时，让切换器安静下来。"; case "高级":return "调整激活方式与切换行为。"; case "用量":return "记录每一次更流畅的切换。"; default:return "按你的习惯，设置快捷切换。" } }
-    func card<Content:View>(_ title:String,@ViewBuilder content:()->Content)->some View { VStack(alignment:.leading,spacing:16) { Text(title).font(.system(size:13,weight:.semibold)); content() }.padding(20).frame(maxWidth:.infinity,alignment:.leading).background(.background.opacity(0.65),in:RoundedRectangle(cornerRadius:16)).overlay(RoundedRectangle(cornerRadius:16).stroke(.primary.opacity(0.05))) }
+    func card<Content:View>(_ title:String,@ViewBuilder content:()->Content)->some View {
+        VStack(alignment:.leading,spacing:16) {
+            Text(title).font(.system(size:13,weight:.semibold))
+            content()
+        }
+        .padding(22).frame(maxWidth:.infinity,alignment:.leading)
+        .modifier(SettingsGlass())
+    }
     @ViewBuilder var pageContent: some View {
         switch store.page {
         case "配置": configuration
         case "外观":
-            card("实时预览") { SwitchBar(store:store,compact:true); Text("原生 Liquid Glass 背景，透明度越高越通透；开启系统“减少透明度”时使用不透明背景。").font(.caption).foregroundStyle(.secondary) }
+            card("实时预览") { SwitchBar(store:store,compact:false); Text("原生 Liquid Glass 背景，透明度越高越通透；开启系统“减少透明度”时使用不透明背景。").font(.caption).foregroundStyle(.secondary) }
             card("App 条") {
-                Picker("背景透明度",selection:Binding(get:{store.saved.glassTransparency ?? .medium},set:{store.saved.glassTransparency=$0})) {
+                Picker("背景透明度",selection:Binding(get:{store.saved.glassTransparency ?? .high},set:{store.saved.glassTransparency=$0})) {
                     ForEach(GlassTransparency.allCases,id:\.self) { Text($0.rawValue).tag($0) }
                 }.pickerStyle(.segmented)
                 slider("大小",value:$store.saved.size,range:0.3...1.5)
                 Picker("位置",selection:$store.saved.position) { ForEach(["顶部","中部","底部"],id:\.self) {Text($0)} }.pickerStyle(.segmented)
                 slider("水平位置",value:$store.saved.x,range:0...1); slider("垂直位置",value:$store.saved.y,range:0...1)
-                Button("还原默认") {store.saved.glassTransparency = .medium;store.saved.size=0.7;store.saved.x=0.5;store.saved.y=0.5;store.saved.position="中部"}
+                Button("还原默认") {store.saved.glassTransparency = .high;store.saved.size=0.7;store.saved.x=0.5;store.saved.y=0.5;store.saved.position="中部"}
             }
         case "高级":
             card("激活快捷键") { Picker("按住",selection:$store.saved.modifier) { ForEach(["⌥ Option","⌘ Command","⌃ Control","⇧ Shift"],id:\.self) {Text($0)} }; slider("显示延迟（2.5 为从不显示）",value:$store.saved.delay,range:0...Mechanics.neverDisplayDelay); slider("自动隐藏（0 为从不）",value:$store.saved.hideAfter,range:0...15); Toggle("双击激活键以暂停或启用",isOn:$store.saved.doublePress) }
@@ -488,19 +619,29 @@ struct ContentView: View {
             card("系统权限") { Label(store.globalShortcutsAvailable ? "全局快捷键已就绪" : "长按显示浮层后，可使用按键切换",systemImage:store.globalShortcutsAvailable ? "checkmark.shield" : "keyboard"); Text("辅助功能授权后，可恢复并前置目标主窗口、设置键盘焦点，并直接使用快捷键；授权状态会自动更新。").font(.caption).foregroundStyle(.secondary); Button("打开辅助功能设置") {NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)} }
         }
     }
-    func slider(_ name:String,value:Binding<Double>,range:ClosedRange<Double>)->some View { HStack {Text(name).frame(width:160,alignment:.leading);Slider(value:value,in:range);Text(String(format:"%.2f",value.wrappedValue)).monospacedDigit().foregroundStyle(.secondary).frame(width:40)} }
+    func slider(_ name:String,value:Binding<Double>,range:ClosedRange<Double>)->some View {
+        VStack(alignment:.leading,spacing:8) {
+            HStack(alignment:.firstTextBaseline) {
+                Text(name)
+                Spacer(minLength:12)
+                Text(String(format:"%.2f",value.wrappedValue))
+                    .monospacedDigit().foregroundStyle(.secondary)
+            }.font(.system(size:12))
+            Slider(value:value,in:range).accessibilityLabel(name)
+        }
+    }
     var configuration: some View {
         VStack(alignment:.leading,spacing:20) {
             Picker("模式",selection:$store.saved.mode) {ForEach(["Dock","切换器","自定义"],id:\.self){Text($0)}}.pickerStyle(.segmented).labelsHidden().controlSize(.large)
             card("\(store.saved.mode) 模式") {
                 Text(store.saved.mode == "Dock" ? "与 Dock 中的 App 保持一致，按对应按键快速直达。" : store.saved.mode == "切换器" ? "显示正在运行的 App，保留系统顺序，切换后位置不变。" : "自由添加 App，拖动排序，并为每个 App 设置快捷键。").font(.system(size:12)).foregroundStyle(.secondary)
-                SwitchBar(store:store,compact:true)
+                SwitchBar(store:store,compact:false)
                 HStack {Label("按住 \(store.saved.modifier)",systemImage:"option"); Text("→").foregroundStyle(.tertiary);Text("按下对应字符");Spacer();Text("\(store.apps.count) 个 App").foregroundStyle(.secondary)}.font(.caption)
                 if store.saved.mode == "Dock" {Toggle("将访达作为第一个 App",isOn:$store.saved.finderFirst)}
             }
             if store.saved.mode == "自定义" {
                 card("App 与快捷键") {entries(store.saved.apps,target:"自定义");HStack {Button("添加 App…",systemImage:"plus"){store.pick("自定义")};Button("从 Dock 载入"){store.saved.apps=store.dock().enumerated().map{Entry(path:$0.element.path,key:store.keys[$0.offset % store.keys.count])}};Button("从切换器载入"){store.saved.apps=store.running().enumerated().map{Entry(path:$0.element.path,key:store.keys[$0.offset % store.keys.count])}}}}
-                card("自定义配置") {HStack {TextField("配置名称",text:$profileName);Button("保存配置"){store.saved.profiles.append(Profile(name:profileName,apps:store.saved.apps))}};ForEach(store.saved.profiles){p in HStack {Text(p.name);Spacer();Button("载入"){store.saved.apps=p.apps};Button(role:.destructive){store.saved.profiles.removeAll{$0.id==p.id}}label:{Image(systemName:"trash")}}};HStack {Button("导入…"){store.importProfile()};Button("导出…"){store.exportProfile()}} }
+                card("自定义配置") {HStack {TextField("配置名称",text:$profileName);Button("保存配置"){store.saved.profiles.append(Profile(name:profileName,apps:store.saved.apps))}};ForEach(store.saved.profiles){p in HStack {Text(p.name);Spacer();Button("载入"){store.saved.apps=p.apps};Button(role:.destructive){store.saved.profiles.removeAll{$0.id==p.id}}label:{Image(systemName:"trash")}.help("删除配置 \(p.name)").accessibilityLabel("删除配置 \(p.name)")}};HStack {Button("导入…"){store.importProfile()};Button("导出…"){store.exportProfile()}} }
             } else {
                 card("快捷键设置") {Picker("字符",selection:$store.saved.characters){ForEach(["数字和字母","仅数字","仅字母"],id:\.self){Text($0)}};Picker("键盘布局",selection:$store.saved.keyboard){ForEach(["全键盘","左手区域","右手区域"],id:\.self){Text($0)}}}
                 if store.saved.mode == "切换器" {card("过滤 App") {entries(store.saved.excluded,target:"过滤");Button("添加要排除的 App…"){store.pick("过滤")}}}
@@ -509,7 +650,7 @@ struct ContentView: View {
     }
     func entries(_ list:[Entry],target:String)->some View {
         VStack(spacing:8) {if list.isEmpty {Text("尚未添加 App").font(.caption).foregroundStyle(.secondary).padding(10)}
-            ForEach(list) {entry in HStack {Image(nsImage:NSWorkspace.shared.icon(forFile:entry.path)).resizable().frame(width:28,height:28);Text(entry.name);Spacer();if target=="自定义" {TextField("按键",text:Binding(get:{store.saved.apps.first{$0.path==entry.path}?.key ?? ""},set:{new in let key=new.uppercased();guard key.isEmpty || (key.count == 1 && "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".contains(key)) else {store.message="请输入单个英文字母或数字。";return};guard !store.saved.apps.contains(where:{$0.path != entry.path && $0.key==key && !key.isEmpty}) else {store.message="按键 \(key) 已被其他 App 使用，请选择其他按键。";return};if let i=store.saved.apps.firstIndex(where:{$0.path==entry.path}){store.saved.apps[i].key=key}})).frame(width:45).textFieldStyle(.roundedBorder).focused($shortcutFocused)};Button {switch target{case "静默模式":store.saved.silent.removeAll{$0.path==entry.path};case "过滤":store.saved.excluded.removeAll{$0.path==entry.path};default:store.saved.apps.removeAll{$0.path==entry.path}}}label:{Image(systemName:"minus.circle").foregroundStyle(.secondary)}.buttonStyle(.plain)}.padding(6).background(.primary.opacity(0.025),in:RoundedRectangle(cornerRadius:7)).onDrag {dragID=entry.path;return NSItemProvider(object:entry.path as NSString)}.onDrop(of:[.text],isTargeted:nil){_ in guard target=="自定义",let dragID,let from=store.saved.apps.firstIndex(where:{$0.path==dragID}),let to=store.saved.apps.firstIndex(where:{$0.path==entry.path}) else{return false};store.saved.apps.move(fromOffsets:IndexSet(integer:from),toOffset:to>from ? to+1 : to);return true} }
+            ForEach(list) {entry in HStack {Image(nsImage:NSWorkspace.shared.icon(forFile:entry.path)).resizable().frame(width:28,height:28);Text(entry.name);Spacer();if target=="自定义" {TextField("按键",text:Binding(get:{store.saved.apps.first{$0.path==entry.path}?.key ?? ""},set:{new in let key=new.uppercased();guard key.isEmpty || (key.count == 1 && "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".contains(key)) else {store.message="请输入单个英文字母或数字。";return};guard !store.saved.apps.contains(where:{$0.path != entry.path && $0.key==key && !key.isEmpty}) else {store.message="按键 \(key) 已被其他 App 使用，请选择其他按键。";return};if let i=store.saved.apps.firstIndex(where:{$0.path==entry.path}){store.saved.apps[i].key=key}})).frame(width:45).textFieldStyle(.roundedBorder).focused($shortcutFocused)};Button {switch target{case "静默模式":store.saved.silent.removeAll{$0.path==entry.path};case "过滤":store.saved.excluded.removeAll{$0.path==entry.path};default:store.saved.apps.removeAll{$0.path==entry.path}}}label:{Image(systemName:"minus.circle").foregroundStyle(.secondary)}.buttonStyle(.borderless).help("移除 \(entry.name)").accessibilityLabel("移除 \(entry.name)")}.padding(6).background(.primary.opacity(0.025),in:RoundedRectangle(cornerRadius:7)).onDrag {dragID=entry.path;return NSItemProvider(object:entry.path as NSString)}.onDrop(of:[.text],isTargeted:nil){_ in guard target=="自定义",let dragID,let from=store.saved.apps.firstIndex(where:{$0.path==dragID}),let to=store.saved.apps.firstIndex(where:{$0.path==entry.path}) else{return false};store.saved.apps.move(fromOffsets:IndexSet(integer:from),toOffset:to>from ? to+1 : to);return true} }
         }
     }
 }
@@ -530,7 +671,15 @@ class Delegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         appItem.submenu = appMenu; mainMenu.addItem(appItem); NSApp.mainMenu = mainMenu
         window=NSWindow(contentRect:NSRect(x:0,y:0,width:1000,height:740),styleMask:[.titled,.closable,.miniaturizable,.resizable,.fullSizeContentView],backing:.buffered,defer:false)
         window.delegate = self
-        window.title="quick";window.titlebarAppearsTransparent=true;window.isReleasedWhenClosed=false;window.contentView=NSHostingView(rootView:ContentView(store:store));window.center()
+        window.title="quick";window.titleVisibility = .hidden;window.titlebarAppearsTransparent=true;window.isReleasedWhenClosed=false
+        window.titlebarSeparatorStyle = .none
+        window.isOpaque=false;window.backgroundColor = .clear
+        let settingsView = NSHostingView(rootView:ContentView(store:store))
+        settingsView.wantsLayer = true
+        settingsView.layer?.cornerRadius = 26
+        settingsView.layer?.cornerCurve = .continuous
+        settingsView.layer?.masksToBounds = true
+        window.contentView=settingsView;window.center()
         if screenshot == nil {window.makeKeyAndOrderFront(nil);NSApp.activate(ignoringOtherApps:true);store.installMonitor()} else {window.orderFront(nil)}
         status=NSStatusBar.system.statusItem(withLength:NSStatusItem.squareLength)
         status?.button?.image = AppArtwork.statusIcon
