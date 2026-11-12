@@ -20,13 +20,13 @@ enum AppArtwork {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "Qucik"
+        image.accessibilityDescription = "quick"
         return image
     }()
     static let icon: NSImage = {
         if let url = Bundle.main.url(forResource:"AppIcon",withExtension:"icns"),
            let image = NSImage(contentsOf:url) { return image }
-        return NSImage(systemSymbolName:"q.square.fill",accessibilityDescription:"Qucik")!
+        return NSImage(systemSymbolName:"q.square.fill",accessibilityDescription:"quick")!
     }()
 }
 
@@ -335,7 +335,7 @@ final class Store: ObservableObject {
         let p = NSOpenPanel(); p.allowedContentTypes = [.applicationBundle]; p.allowsMultipleSelection = true; p.directoryURL = URL(fileURLWithPath:"/Applications")
         if p.runModal() == .OK { for url in p.urls { let entry = Entry(path:url.path,key: keys[saved.apps.count % keys.count]); switch target { case "静默模式": if !saved.silent.contains(where:{$0.path==entry.path}) { saved.silent.append(entry) }; case "过滤": if !saved.excluded.contains(where:{$0.path==entry.path}) { saved.excluded.append(entry) }; default: if !saved.apps.contains(where:{$0.path==entry.path}) { saved.apps.append(entry) } } } }
     }
-    func exportProfile() { let p = NSSavePanel(); p.nameFieldStringValue = "Qucik配置.json"; if p.runModal() == .OK, let url=p.url { do { try JSONEncoder().encode(Profile(name:"自定义配置",apps:saved.apps)).write(to:url) } catch { message=error.localizedDescription } } }
+    func exportProfile() { let p = NSSavePanel(); p.nameFieldStringValue = "quick配置.json"; if p.runModal() == .OK, let url=p.url { do { try JSONEncoder().encode(Profile(name:"自定义配置",apps:saved.apps)).write(to:url) } catch { message=error.localizedDescription } } }
     func importProfile() { let p=NSOpenPanel(); p.allowedContentTypes=[.json]; if p.runModal() == .OK, let url=p.url { do { let profile=try JSONDecoder().decode(Profile.self,from:Data(contentsOf:url)); saved.profiles.append(profile); saved.apps=profile.apps; saved.mode="自定义" } catch { message="无法导入："+error.localizedDescription } } }
 }
 
@@ -411,7 +411,7 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing:0) {
             VStack(alignment:.leading,spacing:6) {
-                HStack(spacing:10) { Image(nsImage:AppArtwork.icon).resizable().frame(width:36,height:36); VStack(alignment:.leading,spacing:2) { Text("Qucik").font(.headline); Text("Liquid Glass").font(.caption).foregroundStyle(.secondary) } }.padding(.horizontal,12).padding(.top,30).padding(.bottom,23)
+                HStack(spacing:10) { Image(nsImage:AppArtwork.icon).resizable().frame(width:36,height:36); VStack(alignment:.leading,spacing:2) { Text("quick").font(.headline); Text("Liquid Glass").font(.caption).foregroundStyle(.secondary) } }.padding(.horizontal,12).padding(.top,30).padding(.bottom,23)
                 ForEach(pages,id:\.0) { page,icon in Button { store.page=page } label: { Label(page,systemImage:icon).font(.system(size:13,weight:store.page==page ? .semibold : .regular)).frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,12).padding(.vertical,10).background(store.page==page ? Color.accentColor.opacity(0.17) : .clear,in:RoundedRectangle(cornerRadius:9)).contentShape(Rectangle()) }.buttonStyle(.plain) }
                 Spacer()
                 HStack { Circle().fill(store.enabled ? .green : .gray).frame(width:7,height:7); Text(store.enabled ? "已启用" : "已暂停").font(.caption); Spacer(); Toggle("启用",isOn:$store.enabled).labelsHidden().toggleStyle(.switch).controlSize(.mini) }.padding(12).glassEffect(.regular,in:RoundedRectangle(cornerRadius:12))
@@ -452,7 +452,7 @@ struct ContentView: View {
             card("静默名单") { Text("当前 App 在此列表中时，不显示切换器。").font(.caption).foregroundStyle(.secondary); entries(store.saved.silent,target:"静默模式"); Button("添加 App…",systemImage:"plus") {store.pick("静默模式")}; Toggle("同时禁用这些 App 内的切换快捷键",isOn:$store.saved.disableSilentKeys) }
         case "用量":
             card("切换统计") { HStack(alignment:.firstTextBaseline) { Text("\(store.saved.count)").font(.system(size:48,weight:.light,design:.rounded)); Text("次切换").foregroundStyle(.secondary) }; if store.saved.count==0 {Text("开始使用后，你的切换记录会显示在这里。").foregroundStyle(.secondary)}; ForEach(store.saved.counts.sorted{$0.value > $1.value},id:\.key) { p,c in HStack {Text(Entry(path:p,key:"").name).frame(width:130,alignment:.leading); GeometryReader {g in RoundedRectangle(cornerRadius:4).fill(.blue.gradient).frame(width:max(4,g.size.width*CGFloat(c)/CGFloat(max(store.saved.count,1))))}.frame(height:12);Text("\(c)") } } }
-        case "关于":card("Qucik") { Image(nsImage:AppArtwork.icon).resizable().frame(width:80,height:80); Text("Swift 原生应用").font(.title2); Text("为 macOS 27 构建，使用系统 Liquid Glass 材质。\n独立重建的应用切换工具，未使用原应用品牌素材。").foregroundStyle(.secondary); Text("版本 1.0").font(.caption) }
+        case "关于":card("quick") { Image(nsImage:AppArtwork.icon).resizable().frame(width:80,height:80); Text("Swift 原生应用").font(.title2); Text("为 macOS 27 构建，使用系统 Liquid Glass 材质。\n独立重建的应用切换工具，未使用原应用品牌素材。").foregroundStyle(.secondary); Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.2")").font(.caption) }
         default:
             card("启动与菜单栏") { Toggle("显示菜单栏图标",isOn:$store.saved.showStatus); Toggle("登录时启动",isOn:Binding(get:{SMAppService.mainApp.status == .enabled},set:{on in do {if on {try SMAppService.mainApp.register()} else {try SMAppService.mainApp.unregister()}} catch {store.message=error.localizedDescription}})) }
             card("系统权限") { Label(store.globalShortcutsAvailable ? "全局快捷键已就绪" : "长按显示浮层后，可使用按键切换",systemImage:store.globalShortcutsAvailable ? "checkmark.shield" : "keyboard"); Text("辅助功能授权后，可恢复并前置目标主窗口、设置键盘焦点，并直接使用快捷键；授权状态会自动更新。").font(.caption).foregroundStyle(.secondary); Button("打开辅助功能设置") {NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)} }
@@ -496,18 +496,18 @@ class Delegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle:"打开设置…",action:#selector(openSettings),keyEquivalent:",").target = self
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle:"退出Qucik",action:#selector(quit),keyEquivalent:"q").target = self
+        appMenu.addItem(withTitle:"退出quick",action:#selector(quit),keyEquivalent:"q").target = self
         appItem.submenu = appMenu; mainMenu.addItem(appItem); NSApp.mainMenu = mainMenu
         window=NSWindow(contentRect:NSRect(x:0,y:0,width:1000,height:740),styleMask:[.titled,.closable,.miniaturizable,.resizable,.fullSizeContentView],backing:.buffered,defer:false)
         window.delegate = self
-        window.title="Qucik";window.titlebarAppearsTransparent=true;window.isReleasedWhenClosed=false;window.contentView=NSHostingView(rootView:ContentView(store:store));window.center()
+        window.title="quick";window.titlebarAppearsTransparent=true;window.isReleasedWhenClosed=false;window.contentView=NSHostingView(rootView:ContentView(store:store));window.center()
         if screenshot == nil {window.makeKeyAndOrderFront(nil);NSApp.activate(ignoringOtherApps:true);store.installMonitor()} else {window.orderFront(nil)}
         status=NSStatusBar.system.statusItem(withLength:NSStatusItem.squareLength)
         status?.button?.image = AppArtwork.statusIcon
-        status?.button?.toolTip = "Qucik"
-        status?.button?.setAccessibilityLabel("Qucik")
+        status?.button?.toolTip = "quick"
+        status?.button?.setAccessibilityLabel("quick")
         status?.isVisible = store.saved.showStatus
-        let menu=NSMenu();menu.addItem(withTitle:"打开设置…",action:#selector(openSettings),keyEquivalent:",").target=self;menu.addItem(withTitle:"启用 / 暂停",action:#selector(toggle),keyEquivalent:"").target=self;menu.addItem(.separator());menu.addItem(withTitle:"退出Qucik",action:#selector(quit),keyEquivalent:"q").target=self;status?.menu=menu
+        let menu=NSMenu();menu.addItem(withTitle:"打开设置…",action:#selector(openSettings),keyEquivalent:",").target=self;menu.addItem(withTitle:"启用 / 暂停",action:#selector(toggle),keyEquivalent:"").target=self;menu.addItem(.separator());menu.addItem(withTitle:"退出quick",action:#selector(quit),keyEquivalent:"q").target=self;status?.menu=menu
         Timer.scheduledTimer(withTimeInterval:0.5,repeats:true){[weak self]_ in guard let self else{return};self.status?.isVisible=self.store.saved.showStatus}
         if let screenshot { var frames=0;Timer.scheduledTimer(withTimeInterval:1.0/60,repeats:true){[weak self]t in frames+=1;guard frames>=120,let self,let view=self.window.contentView else{return};t.invalidate();self.window.displayIfNeeded();guard let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds) else{exit(2)};view.cacheDisplay(in:view.bounds,to:bitmap);guard let png=bitmap.representation(using:.png,properties:[:]) else{exit(3)};do{try FileManager.default.createDirectory(at:URL(fileURLWithPath:screenshot).deletingLastPathComponent(),withIntermediateDirectories:true);try png.write(to:URL(fileURLWithPath:screenshot));print("Screenshot saved: \(screenshot)")}catch{print(error);exit(4)};NSApp.terminate(nil)} }
     }

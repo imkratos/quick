@@ -34,4 +34,4 @@ with tempfile.TemporaryDirectory(prefix="glassswitch-keyboard-") as directory:
     binary = work / "check"
     subprocess.run(["swiftc", str(root / "Sources/Mechanics.swift"), str(main), "-o", str(binary)], check=True)
     for mode in sys.argv[1:] or ("fallback", "tap"):
-        subprocess.run([str(binary), str(work), mode, str(root / "Qucik.app")], check=True, timeout=45)
+        subprocess.run([str(binary), str(work), mode, str(root / "quick.app")], check=True, timeout=45)

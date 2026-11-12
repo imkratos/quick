@@ -2,9 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-version="${1:-1.0.0}"
+version="${1:-0.0.2}"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo '版本号必须使用 X.Y.Z 格式，例如 1.0.0。' >&2
+  echo '版本号必须使用 X.Y.Z 格式，例如 0.0.2。' >&2
   exit 1
 fi
 if [[ "$(uname -m)" != arm64 ]]; then
@@ -14,18 +14,18 @@ fi
 
 bash build.sh
 mkdir -p dist
-staging="$(mktemp -d "${TMPDIR:-/tmp}/qucik-dmg.XXXXXX")"
+staging="$(mktemp -d "${TMPDIR:-/tmp}/quick-dmg.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
-ditto Qucik.app "$staging/Qucik.app"
-plist="$staging/Qucik.app/Contents/Info.plist"
+ditto quick.app "$staging/quick.app"
+plist="$staging/quick.app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $version" "$plist"
-codesign --force --sign - "$staging/Qucik.app"
-codesign --verify --strict --verbose=2 "$staging/Qucik.app"
+codesign --force --sign - "$staging/quick.app"
+codesign --verify --strict --verbose=2 "$staging/quick.app"
 ln -s /Applications "$staging/Applications"
 
-filename="Qucik-$version-macos-arm64.dmg"
-hdiutil create -volname "Qucik $version" -srcfolder "$staging" \
+filename="quick-$version-macos-arm64.dmg"
+hdiutil create -volname "quick $version" -srcfolder "$staging" \
   -ov -format UDZO "dist/$filename"
 hdiutil verify "dist/$filename"
 cd dist

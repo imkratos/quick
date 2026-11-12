@@ -29,7 +29,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo 'Release tags must use vX.Y.Z, for example v1.0.0.' >&2
+            echo 'Release tags must use vX.Y.Z, for example v0.0.2.' >&2
             exit 1
           fi
           echo "APP_VERSION=${TAG#v}" >> "$GITHUB_ENV"
@@ -47,7 +47,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Qucik-${{ env.APP_VERSION }}-macos-arm64
+          name: quick-${{ env.APP_VERSION }}-macos-arm64
           path: |
             dist/*.dmg
             dist/*.sha256
@@ -60,8 +60,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "Qucik $TAG" --generate-notes
+            gh release create "$TAG" --verify-tag --title "quick $TAG" --generate-notes
           fi
           gh release upload "$TAG" \
-            "dist/Qucik-$APP_VERSION-macos-arm64.dmg" \
-            "dist/Qucik-$APP_VERSION-macos-arm64.dmg.sha256" --clobber
+            "dist/quick-$APP_VERSION-macos-arm64.dmg" \
+            "dist/quick-$APP_VERSION-macos-arm64.dmg.sha256" --clobber

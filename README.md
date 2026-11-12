@@ -1,6 +1,6 @@
-# Qucik
+# quick
 
-Qucik 是一款原生 macOS 应用切换工具，使用 Swift、SwiftUI 和 AppKit 构建，搭配系统 Liquid Glass 材质。按住激活键，再按应用对应的字符，即可打开或切换应用，减少在窗口和 Dock 之间寻找目标的操作。
+quick 是一款原生 macOS 应用切换工具，使用 Swift、SwiftUI 和 AppKit 构建，搭配系统 Liquid Glass 材质。按住激活键，再按应用对应的字符，即可打开或切换应用，减少在窗口和 Dock 之间寻找目标的操作。
 
 ## 功能
 
@@ -18,21 +18,21 @@ Qucik 是一款原生 macOS 应用切换工具，使用 Swift、SwiftUI 和 AppK
 - Apple Silicon Mac（arm64）。
 - macOS 27 或更新版本；当前发布包的最低系统版本为 27.0。
 
-在本仓库的 **Releases** 页面下载 `Qucik-X.Y.Z-macos-arm64.dmg`，打开后将 `Qucik.app` 拖入 `Applications`，再从“应用程序”启动。
+在本仓库的 **Releases** 页面下载 `quick-X.Y.Z-macos-arm64.dmg`，打开后将 `quick.app` 拖入 `Applications`，再从“应用程序”启动。
 
 当前构建采用临时签名（ad-hoc），未配置 Apple Developer ID 签名或 Apple 公证。首次打开时可能受到 Gatekeeper 限制；确认来源可信后，可在“系统设置 → 隐私与安全性”中按系统提示允许打开。
 
 发布页同时提供 `.sha256` 文件，将其与 DMG 放在同一目录后可校验下载内容：
 
 ```bash
-shasum -a 256 -c Qucik-1.0.0-macos-arm64.dmg.sha256
+shasum -a 256 -c quick-0.0.2-macos-arm64.dmg.sha256
 ```
 
 ## 快速上手
 
-1. 启动 Qucik，在“配置”中选择 Dock、切换器或自定义模式。
+1. 启动 quick，在“配置”中选择 Dock、切换器或自定义模式。
 2. 按住 `⌥ Option`，等待浮层出现，再按目标应用下方的字符切换应用。
-3. 在“系统设置 → 隐私与安全性 → 辅助功能”中授权 Qucik，以启用完整的全局按键拦截、无需等待浮层的快捷直达及窗口焦点恢复。权限状态会自动更新。
+3. 在“系统设置 → 隐私与安全性 → 辅助功能”中授权 quick，以启用完整的全局按键拦截、无需等待浮层的快捷直达及窗口焦点恢复。权限状态会自动更新。
 4. 按需要设置外观、激活键、静默名单及自定义配置。
 
 未授权辅助功能时，仍可长按激活键显示浮层，再使用系统快捷键选择应用。显示延迟设为 `2.5` 表示不自动显示浮层；自动隐藏设为 `0` 表示不自动隐藏。
@@ -45,13 +45,13 @@ shasum -a 256 -c Qucik-1.0.0-macos-arm64.dmg.sha256
 
 ```bash
 bash build.sh
-open Qucik.app
+open quick.app
 ```
 
 生成带版本号的 DMG：
 
 ```bash
-bash scripts/package-dmg.sh 1.0.0
+bash scripts/package-dmg.sh 0.0.2
 ```
 
 产物位于 `dist/`，包含 arm64 DMG 和 SHA-256 校验文件。DMG 内包含应用及指向“应用程序”的快捷方式，应用包版本号取自传入的版本。
@@ -61,11 +61,11 @@ bash scripts/package-dmg.sh 1.0.0
 工作流位于 [`.github/workflows/release.yml`](.github/workflows/release.yml)。将本目录作为 GitHub 仓库根目录上传后，推送 `vX.Y.Z` 格式的标签即可自动发布，例如：
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v0.0.2
+git push origin v0.0.2
 ```
 
-请先提交并推送代码及工作流，再创建标签。仅在本地创建标签不会触发 Actions；`v1.0.0-beta` 等预发布标签目前不支持。
+请先提交并推送代码及工作流，再创建标签。仅在本地创建标签不会触发 Actions；`v0.0.2-beta` 等预发布标签目前不支持。
 
 工作流使用 GitHub 的 [`xcode-27` Apple Silicon runner](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)，选择 Xcode 27.2，依次完成：
 
@@ -81,8 +81,8 @@ git push origin v1.0.0
 运行不需要界面交互的机制检查：
 
 ```bash
-swiftc Sources/Mechanics.swift checks/mechanics-check.swift -o /tmp/qucik-mechanics-check
-/tmp/qucik-mechanics-check
+swiftc Sources/Mechanics.swift checks/mechanics-check.swift -o /tmp/quick-mechanics-check
+/tmp/quick-mechanics-check
 ```
 
 在本地桌面会话中执行键盘回归：
