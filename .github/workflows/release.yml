@@ -59,8 +59,15 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
+          notes_file="release-notes/$TAG.md"
           if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "quick $TAG" --generate-notes
+            if [[ -f "$notes_file" ]]; then
+              gh release create "$TAG" --verify-tag --title "quick $TAG" --notes-file "$notes_file"
+            else
+              gh release create "$TAG" --verify-tag --title "quick $TAG" --generate-notes
+            fi
+          elif [[ -f "$notes_file" ]]; then
+            gh release edit "$TAG" --notes-file "$notes_file"
           fi
           gh release upload "$TAG" \
             "dist/quick-$APP_VERSION-macos-arm64.dmg" \

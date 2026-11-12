@@ -1,5 +1,7 @@
 # quick
 
+简体中文 | [English](README.en.md)
+
 quick 是一款原生 macOS 应用切换工具，使用 Swift、SwiftUI 和 AppKit 构建，搭配系统 Liquid Glass 材质。按住激活键，再按应用对应的字符，即可打开或切换应用，减少在窗口和 Dock 之间寻找目标的操作。
 
 ![quick 配置界面：切换器模式与快捷键设置](shots/configuration.png)
@@ -12,6 +14,7 @@ quick 是一款原生 macOS 应用切换工具，使用 Swift、SwiftUI 和 AppK
 - **外观设置**：实时预览 Liquid Glass 效果，调整背景透明度、大小和屏幕位置，并可在光标所在屏幕显示。
 - **切换行为设置**：调整显示延迟和自动隐藏时间，支持双击激活键暂停或启用，以及再次选择前台应用时隐藏该应用。
 - **静默名单**：在指定应用中隐藏切换浮层，并可同时停用切换快捷键。
+- **界面语言**：在“通用 → 语言”中选择简体中文或 English，界面和菜单即时更新，并记住选择。
 - **菜单栏与登录启动**：通过菜单栏访问应用；登录启动由 macOS 管理，需系统接受注册。
 - **本地使用统计**：记录总切换次数及各应用的切换次数。
 
@@ -85,6 +88,12 @@ git push origin v0.0.2
 ```bash
 swiftc Sources/Mechanics.swift checks/mechanics-check.swift -o /tmp/quick-mechanics-check
 /tmp/quick-mechanics-check
+```
+
+运行语言切换与旧配置兼容检查：
+
+```bash
+python3 checks/run-localization-check.py
 ```
 
 在本地桌面会话中执行键盘回归：

@@ -32,6 +32,6 @@ with tempfile.TemporaryDirectory(prefix="glassswitch-keyboard-") as directory:
     main = work / "main.swift"
     main.write_text(source + (root / "checks/keyboard-e2e.swift").read_text())
     binary = work / "check"
-    subprocess.run(["swiftc", str(root / "Sources/Mechanics.swift"), str(main), "-o", str(binary)], check=True)
+    subprocess.run(["swiftc", "-swift-version", "5", "-disable-sandbox", str(root / "Sources/Mechanics.swift"), str(root / "Sources/Localization.swift"), str(main), "-o", str(binary)], check=True)
     for mode in sys.argv[1:] or ("fallback", "tap"):
         subprocess.run([str(binary), str(work), mode, str(root / "quick.app")], check=True, timeout=45)

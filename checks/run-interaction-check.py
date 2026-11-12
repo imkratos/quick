@@ -11,5 +11,5 @@ with tempfile.TemporaryDirectory(prefix="glassswitch-check-") as directory:
     main = work / "main.swift"
     main.write_text(source + (root / "checks/interaction-check.swift").read_text())
     binary = work / "check"
-    subprocess.run(["swiftc", str(root / "Sources/Mechanics.swift"), str(main), "-o", str(binary)], check=True)
+    subprocess.run(["swiftc", "-swift-version", "5", "-disable-sandbox", str(root / "Sources/Mechanics.swift"), str(root / "Sources/Localization.swift"), str(main), "-o", str(binary)], check=True)
     subprocess.run([str(binary), *sys.argv[1:]], check=True)

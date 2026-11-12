@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import AppKit
 import Carbon
 import ServiceManagement
@@ -41,6 +42,7 @@ enum GlassTransparency: String, Codable, CaseIterable {
     case low = "低", medium = "中", high = "高"
 }
 struct Saved: Codable {
+    var language: AppLanguage?
     var glassTransparency: GlassTransparency?
 
     var mode = "Dock"; var apps: [Entry] = []; var silent: [Entry] = []; var excluded: [Entry] = []
@@ -74,6 +76,11 @@ final class Store: ObservableObject {
             }
         }
     }
+    var language: AppLanguage { saved.language ?? .simplifiedChinese }
+    func text(_ key: String, _ arguments: String...) -> String {
+        let template = language.text(key)
+        return arguments.isEmpty ? template : String(format:template,locale:language.locale,arguments:arguments)
+    }
     var sessionApps: [Entry]?
     var pendingFocus: pid_t?
     var activationRequest = 0
@@ -95,11 +102,11 @@ final class Store: ObservableObject {
             if enabled && loginItemStatus == .requiresApproval {
                 SMAppService.openSystemSettingsLoginItems()
             } else if enabled && loginItemStatus != .enabled {
-                message = "未能启用登录时启动，请确认 quick 位于“应用程序”文件夹中，然后重试。"
+                message = text("未能启用登录时启动，请确认 quick 位于“应用程序”文件夹中，然后重试。")
             }
         } catch {
             refreshLoginItemStatus()
-            message = "无法\(enabled ? "启用" : "关闭")登录时启动：\(error.localizedDescription)"
+            message = text(enabled ? "无法启用登录时启动：%@" : "无法关闭登录时启动：%@",error.localizedDescription)
         }
     }
     var keys: [String] {
@@ -235,7 +242,7 @@ final class Store: ObservableObject {
     func choose(_ entry: Entry, with event: NSEvent) {
         consumedKeys.insert(event.keyCode)
         guard eventTap != nil || fallbackHotKeys[event.keyCode] != nil else {
-            message = "此快捷键无法注册，请更换按键或授权辅助功能。"
+            message = text("此快捷键无法注册，请更换按键或授权辅助功能。")
             return
         }
         if let index = apps.firstIndex(of:entry) { selected = index }
@@ -370,12 +377,12 @@ final class Store: ObservableObject {
         let p = NSOpenPanel(); p.allowedContentTypes = [.applicationBundle]; p.allowsMultipleSelection = true; p.directoryURL = URL(fileURLWithPath:"/Applications")
         if p.runModal() == .OK { for url in p.urls { let entry = Entry(path:url.path,key: keys[saved.apps.count % keys.count]); switch target { case "静默模式": if !saved.silent.contains(where:{$0.path==entry.path}) { saved.silent.append(entry) }; case "过滤": if !saved.excluded.contains(where:{$0.path==entry.path}) { saved.excluded.append(entry) }; default: if !saved.apps.contains(where:{$0.path==entry.path}) { saved.apps.append(entry) } } } }
     }
-    func exportProfile() { let p = NSSavePanel(); p.nameFieldStringValue = "quick配置.json"; if p.runModal() == .OK, let url=p.url { do { try JSONEncoder().encode(Profile(name:"自定义配置",apps:saved.apps)).write(to:url) } catch { message=error.localizedDescription } } }
-    func importProfile() { let p=NSOpenPanel(); p.allowedContentTypes=[.json]; if p.runModal() == .OK, let url=p.url { do { let profile=try JSONDecoder().decode(Profile.self,from:Data(contentsOf:url)); saved.profiles.append(profile); saved.apps=profile.apps; saved.mode="自定义" } catch { message="无法导入："+error.localizedDescription } } }
+    func exportProfile() { let p = NSSavePanel(); p.nameFieldStringValue = text("quick配置.json"); if p.runModal() == .OK, let url=p.url { do { try JSONEncoder().encode(Profile(name:text("自定义配置"),apps:saved.apps)).write(to:url) } catch { message=error.localizedDescription } } }
+    func importProfile() { let p=NSOpenPanel(); p.allowedContentTypes=[.json]; if p.runModal() == .OK, let url=p.url { do { let profile=try JSONDecoder().decode(Profile.self,from:Data(contentsOf:url)); saved.profiles.append(profile); saved.apps=profile.apps; saved.mode="自定义" } catch { message=text("无法导入：")+error.localizedDescription } } }
 }
 
 struct AppTile: View {
-    let entry: Entry; var scale = 0.7; var action: ()->Void
+    let entry: Entry; var language: AppLanguage = .simplifiedChinese; var scale = 0.7; var action: ()->Void
     var body: some View {
         Button(action:action) {
             VStack(spacing:7) {
@@ -394,7 +401,7 @@ struct AppTile: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(entry.name)
-        .accessibilityValue(entry.key.isEmpty ? "" : "快捷键 \(entry.key)")
+        .accessibilityValue(entry.key.isEmpty ? "" : language.text("快捷键 %@",entry.key))
     }
 }
 struct SwitchBarGlass<Content: View>: NSViewRepresentable {
@@ -438,10 +445,10 @@ struct SwitchBar: View {
             ScrollView(.horizontal,showsIndicators:false) {
                 HStack(spacing:4) {
                     if store.apps.isEmpty {
-                        Text("暂无 App，请在设置中添加").font(.callout).foregroundStyle(.secondary).frame(minWidth:260).frame(height:118)
+                        Text(store.text("暂无 App，请在设置中添加")).font(.callout).foregroundStyle(.secondary).frame(minWidth:260).frame(height:118)
                     }
                     ForEach(Array(store.apps.enumerated()),id:\.element.id) { i,a in
-                        AppTile(entry:a,scale:store.saved.size) { store.activate(a) }
+                        AppTile(entry:a,language:store.language,scale:store.saved.size) { store.activate(a) }
                             .id(i)
                     }
                 }.padding(.horizontal,10).padding(.vertical,6)
@@ -482,7 +489,7 @@ struct ContentView: View {
     @ObservedObject var store: Store
     let pages = [("配置","square.grid.2x2"),("通用","gearshape"),("外观","paintpalette"),("高级","slider.horizontal.3"),("静默模式","moon"),("用量","chart.bar"),("关于","info.circle")]
     @FocusState var shortcutFocused: Bool
-    @State var subpage="通用"; @State var profileName="新配置"; @State var dragID: String?
+    @State var subpage="通用"; @State var profileName=""; @State var dragID: String?
     var body: some View {
         HStack(spacing:0) {
             VStack(alignment:.leading,spacing:8) {
@@ -490,13 +497,13 @@ struct ContentView: View {
                     Image(nsImage:AppArtwork.icon).resizable().frame(width:38,height:38)
                     VStack(alignment:.leading,spacing:3) {
                         Text("quick").font(.system(size:18,weight:.semibold))
-                        Text("应用快捷切换").font(.system(size:11)).foregroundStyle(.secondary)
+                        Text(store.text("应用快捷切换")).font(.system(size:11)).foregroundStyle(.secondary)
                     }
                 }.padding(.horizontal,10).padding(.top,12).padding(.bottom,20)
                 ForEach(pages,id:\.0) { page,icon in
                     Button { store.page=page } label: {
                         Label {
-                            Text(page).frame(maxWidth:.infinity,alignment:.leading)
+                            Text(store.text(page)).frame(maxWidth:.infinity,alignment:.leading)
                         } icon: {
                             Image(systemName:icon).frame(width:20)
                         }
@@ -511,20 +518,20 @@ struct ContentView: View {
                         .contentShape(RoundedRectangle(cornerRadius:12,style:.continuous))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(page)
+                    .accessibilityLabel(store.text(page))
                     .accessibilityAddTraits(store.page == page ? .isSelected : [])
                 }
                 Spacer(minLength:20)
                 HStack {
                     Circle().fill(store.enabled ? .green : .secondary).frame(width:6,height:6)
-                    Text(store.enabled ? "已启用" : "已暂停").font(.system(size:12,weight:.medium))
+                    Text(store.text(store.enabled ? "已启用" : "已暂停")).font(.system(size:12,weight:.medium))
                     Spacer()
-                    Toggle("启用切换器",isOn:$store.enabled).labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                    Toggle(store.text("启用切换器"),isOn:$store.enabled).labelsHidden().toggleStyle(.switch).controlSize(.mini)
                 }.padding(.horizontal,10).padding(.vertical,8)
-                Text("按住 \(store.saved.modifier) 即刻切换")
+                Text(store.text("按住 %@ 即刻切换",store.saved.modifier))
                     .font(.system(size:11)).foregroundStyle(.secondary).padding(.horizontal,10)
                 Button { NSApp.terminate(nil) } label: {
-                    Label("退出 quick",systemImage:"power")
+                    Label(store.text("退出 quick"),systemImage:"power")
                         .font(.system(size:12,weight:.medium))
                         .frame(maxWidth:.infinity)
                         .padding(.vertical,4)
@@ -532,7 +539,7 @@ struct ContentView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
                 .accessibilityIdentifier("quick.quit")
-                .help("退出 quick（⌘Q）")
+                .help(store.text("退出 quick（⌘Q）"))
                 .padding(.top,10)
             }
             .padding(14).frame(width:184)
@@ -541,12 +548,12 @@ struct ContentView: View {
             VStack(alignment:.leading,spacing:0) {
                 HStack(alignment:.center,spacing:20) {
                     VStack(alignment:.leading,spacing:6) {
-                        Text(store.page).font(.system(size:26,weight:.bold))
-                        Text(subtitle).font(.system(size:12)).foregroundStyle(.secondary)
+                        Text(store.text(store.page)).font(.system(size:26,weight:.bold))
+                        Text(store.text(subtitle)).font(.system(size:12)).foregroundStyle(.secondary)
                     }
                     Spacer(minLength:0)
                     Button { store.present() } label: {
-                        Label("预览切换器",systemImage:"play.fill")
+                        Label(store.text("预览切换器"),systemImage:"play.fill")
                     }.buttonStyle(.glass).controlSize(.large)
                 }.padding(.horizontal,28).padding(.top,28).padding(.bottom,20)
                 ScrollView {
@@ -558,7 +565,7 @@ struct ContentView: View {
                 }
                 HStack(spacing:7) {
                     Image(systemName:"keyboard")
-                    Text("\(store.saved.modifier) + 对应按键")
+                    Text(store.text("%@ + 对应按键",store.saved.modifier))
                     Spacer()
                     Text("quick")
                 }
@@ -566,6 +573,7 @@ struct ContentView: View {
                 .padding(.horizontal,28).padding(.vertical,16)
             }.frame(maxWidth:.infinity)
         }
+        .environment(\.locale,store.language.locale)
         .background { SettingsBackdrop().ignoresSafeArea() }
         .buttonStyle(.bordered)
         .toggleStyle(.switch)
@@ -574,12 +582,12 @@ struct ContentView: View {
         .onAppear { store.refreshLoginItemStatus() }
         .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in store.refreshLoginItemStatus() }
         .onDisappear { store.editingShortcut = false }
-        .alert("提示",isPresented:Binding(get:{!store.message.isEmpty},set:{if !$0 {store.message=""}})) { Button("好") {store.message=""} } message:{ Text(store.message) }
+        .alert(store.text("提示"),isPresented:Binding(get:{!store.message.isEmpty},set:{if !$0 {store.message=""}})) { Button(store.text("好")) {store.message=""} } message:{ Text(store.message) }
     }
     var subtitle: String { switch store.page { case "配置":return "为每一个 App，安排一个顺手的快捷键。"; case "外观":return "让切换器融入你的桌面。"; case "静默模式":return "专注时，让切换器安静下来。"; case "高级":return "调整激活方式与切换行为。"; case "用量":return "记录每一次更流畅的切换。"; default:return "按你的习惯，设置快捷切换。" } }
     func card<Content:View>(_ title:String,@ViewBuilder content:()->Content)->some View {
         VStack(alignment:.leading,spacing:16) {
-            Text(title).font(.system(size:13,weight:.semibold))
+            Text(store.text(title)).font(.system(size:13,weight:.semibold))
             content()
         }
         .padding(22).frame(maxWidth:.infinity,alignment:.leading)
@@ -589,86 +597,84 @@ struct ContentView: View {
         switch store.page {
         case "配置": configuration
         case "外观":
-            card("实时预览") { SwitchBar(store:store,compact:false); Text("原生 Liquid Glass 背景，透明度越高越通透；开启系统“减少透明度”时使用不透明背景。").font(.caption).foregroundStyle(.secondary) }
+            card("实时预览") { SwitchBar(store:store,compact:false); Text(store.text("原生 Liquid Glass 背景，透明度越高越通透；开启系统“减少透明度”时使用不透明背景。")).font(.caption).foregroundStyle(.secondary) }
             card("App 条") {
-                Picker("背景透明度",selection:Binding(get:{store.saved.glassTransparency ?? .high},set:{store.saved.glassTransparency=$0})) {
-                    ForEach(GlassTransparency.allCases,id:\.self) { Text($0.rawValue).tag($0) }
+                Picker(store.text("背景透明度"),selection:Binding(get:{store.saved.glassTransparency ?? .high},set:{store.saved.glassTransparency=$0})) {
+                    ForEach(GlassTransparency.allCases,id:\.self) { Text(store.text($0.rawValue)).tag($0) }
                 }.pickerStyle(.segmented)
                 slider("大小",value:$store.saved.size,range:0.3...1.5)
-                Picker("位置",selection:$store.saved.position) { ForEach(["顶部","中部","底部"],id:\.self) {Text($0)} }.pickerStyle(.segmented)
+                Picker(store.text("位置"),selection:$store.saved.position) { ForEach(["顶部","中部","底部"],id:\.self) {Text(store.text($0)).tag($0)} }.pickerStyle(.segmented)
                 slider("水平位置",value:$store.saved.x,range:0...1); slider("垂直位置",value:$store.saved.y,range:0...1)
-                Button("还原默认") {store.saved.glassTransparency = .high;store.saved.size=0.7;store.saved.x=0.5;store.saved.y=0.5;store.saved.position="中部"}
+                Button(store.text("还原默认")) {store.saved.glassTransparency = .high;store.saved.size=0.7;store.saved.x=0.5;store.saved.y=0.5;store.saved.position="中部"}
             }
         case "高级":
-            card("激活快捷键") { Picker("按住",selection:$store.saved.modifier) { ForEach(["⌥ Option","⌘ Command","⌃ Control","⇧ Shift"],id:\.self) {Text($0)} }; slider("显示延迟（2.5 为从不显示）",value:$store.saved.delay,range:0...Mechanics.neverDisplayDelay); slider("自动隐藏（0 为从不）",value:$store.saved.hideAfter,range:0...15); Toggle("双击激活键以暂停或启用",isOn:$store.saved.doublePress) }
-            card("切换行为") { Toggle("App 已在最前时，再次切换会隐藏它",isOn:$store.saved.hideFront); Toggle("在光标所在屏幕显示",isOn:$store.saved.activeScreen) }
+            card("激活快捷键") { Picker(store.text("按住"),selection:$store.saved.modifier) { ForEach(["⌥ Option","⌘ Command","⌃ Control","⇧ Shift"],id:\.self) {Text(store.text($0)).tag($0)} }; slider("显示延迟（2.5 为从不显示）",value:$store.saved.delay,range:0...Mechanics.neverDisplayDelay); slider("自动隐藏（0 为从不）",value:$store.saved.hideAfter,range:0...15); Toggle(store.text("双击激活键以暂停或启用"),isOn:$store.saved.doublePress) }
+            card("切换行为") { Toggle(store.text("App 已在最前时，再次切换会隐藏它"),isOn:$store.saved.hideFront); Toggle(store.text("在光标所在屏幕显示"),isOn:$store.saved.activeScreen) }
         case "静默模式":
-            card("静默名单") { Text("当前 App 在此列表中时，不显示切换器。").font(.caption).foregroundStyle(.secondary); entries(store.saved.silent,target:"静默模式"); Button("添加 App…",systemImage:"plus") {store.pick("静默模式")}; Toggle("同时禁用这些 App 内的切换快捷键",isOn:$store.saved.disableSilentKeys) }
+            card("静默名单") { Text(store.text("当前 App 在此列表中时，不显示切换器。")).font(.caption).foregroundStyle(.secondary); entries(store.saved.silent,target:"静默模式"); Button(store.text("添加 App…"),systemImage:"plus") {store.pick("静默模式")}; Toggle(store.text("同时禁用这些 App 内的切换快捷键"),isOn:$store.saved.disableSilentKeys) }
         case "用量":
-            card("切换统计") { HStack(alignment:.firstTextBaseline) { Text("\(store.saved.count)").font(.system(size:48,weight:.light,design:.rounded)); Text("次切换").foregroundStyle(.secondary) }; if store.saved.count==0 {Text("开始使用后，你的切换记录会显示在这里。").foregroundStyle(.secondary)}; ForEach(store.saved.counts.sorted{$0.value > $1.value},id:\.key) { p,c in HStack {Text(Entry(path:p,key:"").name).frame(width:130,alignment:.leading); GeometryReader {g in RoundedRectangle(cornerRadius:4).fill(.blue.gradient).frame(width:max(4,g.size.width*CGFloat(c)/CGFloat(max(store.saved.count,1))))}.frame(height:12);Text("\(c)") } } }
-        case "关于":card("quick") { Image(nsImage:AppArtwork.icon).resizable().frame(width:80,height:80); Text("Swift 原生应用").font(.title2); Text("为 macOS 27 构建，使用系统 Liquid Glass 材质。\n独立重建的应用切换工具，未使用原应用品牌素材。").foregroundStyle(.secondary); Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.2")").font(.caption) }
+            card("切换统计") { HStack(alignment:.firstTextBaseline) { Text("\(store.saved.count)").font(.system(size:48,weight:.light,design:.rounded)); Text(store.text("次切换")).foregroundStyle(.secondary) }; if store.saved.count==0 {Text(store.text("开始使用后，你的切换记录会显示在这里。")).foregroundStyle(.secondary)}; ForEach(store.saved.counts.sorted{$0.value > $1.value},id:\.key) { p,c in HStack {Text(Entry(path:p,key:"").name).frame(width:130,alignment:.leading); GeometryReader {g in RoundedRectangle(cornerRadius:4).fill(.blue.gradient).frame(width:max(4,g.size.width*CGFloat(c)/CGFloat(max(store.saved.count,1))))}.frame(height:12);Text("\(c)") } } }
+        case "关于":card("quick") { Image(nsImage:AppArtwork.icon).resizable().frame(width:80,height:80); Text(store.text("Swift 原生应用")).font(.title2); Text(store.text("为 macOS 27 构建，使用系统 Liquid Glass 材质。\n独立重建的应用切换工具，未使用原应用品牌素材。")).foregroundStyle(.secondary); Text(store.text("版本 %@",Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.2")).font(.caption) }
         default:
-            card("启动与菜单栏") {
-                Toggle("显示菜单栏图标",isOn:$store.saved.showStatus)
-                Toggle("登录时启动",isOn:Binding(get:{store.loginItemStatus == .enabled},set:{store.setLaunchAtLogin($0)}))
-                if store.loginItemStatus == .requiresApproval {
-                    Text("已注册登录项，等待系统批准。请在系统设置的“登录项与扩展”中允许 quick 登录时启动。").font(.caption).foregroundStyle(.secondary)
-                    Button("打开登录项设置") { SMAppService.openSystemSettingsLoginItems() }
+            card("语言") {
+                Picker(store.text("语言"),selection:Binding(get:{store.language},set:{store.saved.language=$0})) {
+                    ForEach(AppLanguage.allCases,id:\.self) { Text($0.name).tag($0) }
                 }
             }
-            card("系统权限") { Label(store.globalShortcutsAvailable ? "全局快捷键已就绪" : "长按显示浮层后，可使用按键切换",systemImage:store.globalShortcutsAvailable ? "checkmark.shield" : "keyboard"); Text("辅助功能授权后，可恢复并前置目标主窗口、设置键盘焦点，并直接使用快捷键；授权状态会自动更新。").font(.caption).foregroundStyle(.secondary); Button("打开辅助功能设置") {NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)} }
+            card("启动与菜单栏") {
+                Toggle(store.text("显示菜单栏图标"),isOn:$store.saved.showStatus)
+                Toggle(store.text("登录时启动"),isOn:Binding(get:{store.loginItemStatus == .enabled},set:{store.setLaunchAtLogin($0)}))
+                if store.loginItemStatus == .requiresApproval {
+                    Text(store.text("已注册登录项，等待系统批准。请在系统设置的“登录项与扩展”中允许 quick 登录时启动。")).font(.caption).foregroundStyle(.secondary)
+                    Button(store.text("打开登录项设置")) { SMAppService.openSystemSettingsLoginItems() }
+                }
+            }
+            card("系统权限") { Label(store.text(store.globalShortcutsAvailable ? "全局快捷键已就绪" : "长按显示浮层后，可使用按键切换"),systemImage:store.globalShortcutsAvailable ? "checkmark.shield" : "keyboard"); Text(store.text("辅助功能授权后，可恢复并前置目标主窗口、设置键盘焦点，并直接使用快捷键；授权状态会自动更新。")).font(.caption).foregroundStyle(.secondary); Button(store.text("打开辅助功能设置")) {NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)} }
         }
     }
     func slider(_ name:String,value:Binding<Double>,range:ClosedRange<Double>)->some View {
         VStack(alignment:.leading,spacing:8) {
             HStack(alignment:.firstTextBaseline) {
-                Text(name)
+                Text(store.text(name))
                 Spacer(minLength:12)
                 Text(String(format:"%.2f",value.wrappedValue))
                     .monospacedDigit().foregroundStyle(.secondary)
             }.font(.system(size:12))
-            Slider(value:value,in:range).accessibilityLabel(name)
+            Slider(value:value,in:range).accessibilityLabel(store.text(name))
         }
     }
     var configuration: some View {
         VStack(alignment:.leading,spacing:20) {
-            Picker("模式",selection:$store.saved.mode) {ForEach(["Dock","切换器","自定义"],id:\.self){Text($0)}}.pickerStyle(.segmented).labelsHidden().controlSize(.large)
-            card("\(store.saved.mode) 模式") {
-                Text(store.saved.mode == "Dock" ? "与 Dock 中的 App 保持一致，按对应按键快速直达。" : store.saved.mode == "切换器" ? "显示正在运行的 App，保留系统顺序，切换后位置不变。" : "自由添加 App，拖动排序，并为每个 App 设置快捷键。").font(.system(size:12)).foregroundStyle(.secondary)
+            Picker(store.text("模式"),selection:$store.saved.mode) {ForEach(["Dock","切换器","自定义"],id:\.self){Text(store.text($0)).tag($0)}}.pickerStyle(.segmented).labelsHidden().controlSize(.large)
+            card(store.text("%@ 模式",store.text(store.saved.mode))) {
+                Text(store.text(store.saved.mode == "Dock" ? "与 Dock 中的 App 保持一致，按对应按键快速直达。" : store.saved.mode == "切换器" ? "显示正在运行的 App，保留系统顺序，切换后位置不变。" : "自由添加 App，拖动排序，并为每个 App 设置快捷键。")).font(.system(size:12)).foregroundStyle(.secondary)
                 SwitchBar(store:store,compact:false)
-                HStack {Label("按住 \(store.saved.modifier)",systemImage:"option"); Text("→").foregroundStyle(.tertiary);Text("按下对应字符");Spacer();Text("\(store.apps.count) 个 App").foregroundStyle(.secondary)}.font(.caption)
-                if store.saved.mode == "Dock" {Toggle("将访达作为第一个 App",isOn:$store.saved.finderFirst)}
+                HStack {Label(store.text("按住 %@",store.saved.modifier),systemImage:"option"); Text("→").foregroundStyle(.tertiary);Text(store.text("按下对应字符"));Spacer();Text(store.text("%@ 个 App",String(store.apps.count))).foregroundStyle(.secondary)}.font(.caption)
+                if store.saved.mode == "Dock" {Toggle(store.text("将访达作为第一个 App"),isOn:$store.saved.finderFirst)}
             }
             if store.saved.mode == "自定义" {
-                card("App 与快捷键") {entries(store.saved.apps,target:"自定义");HStack {Button("添加 App…",systemImage:"plus"){store.pick("自定义")};Button("从 Dock 载入"){store.saved.apps=store.dock().enumerated().map{Entry(path:$0.element.path,key:store.keys[$0.offset % store.keys.count])}};Button("从切换器载入"){store.saved.apps=store.running().enumerated().map{Entry(path:$0.element.path,key:store.keys[$0.offset % store.keys.count])}}}}
-                card("自定义配置") {HStack {TextField("配置名称",text:$profileName);Button("保存配置"){store.saved.profiles.append(Profile(name:profileName,apps:store.saved.apps))}};ForEach(store.saved.profiles){p in HStack {Text(p.name);Spacer();Button("载入"){store.saved.apps=p.apps};Button(role:.destructive){store.saved.profiles.removeAll{$0.id==p.id}}label:{Image(systemName:"trash")}.help("删除配置 \(p.name)").accessibilityLabel("删除配置 \(p.name)")}};HStack {Button("导入…"){store.importProfile()};Button("导出…"){store.exportProfile()}} }
+                card("App 与快捷键") {entries(store.saved.apps,target:"自定义");HStack {Button(store.text("添加 App…"),systemImage:"plus"){store.pick("自定义")};Button(store.text("从 Dock 载入")){store.saved.apps=store.dock().enumerated().map{Entry(path:$0.element.path,key:store.keys[$0.offset % store.keys.count])}};Button(store.text("从切换器载入")){store.saved.apps=store.running().enumerated().map{Entry(path:$0.element.path,key:store.keys[$0.offset % store.keys.count])}}}}
+                card("自定义配置") {HStack {TextField(store.text("配置名称"),text:$profileName);Button(store.text("保存配置")){store.saved.profiles.append(Profile(name:profileName.isEmpty ? store.text("新配置") : profileName,apps:store.saved.apps))}};ForEach(store.saved.profiles){p in HStack {Text(p.name);Spacer();Button(store.text("载入")){store.saved.apps=p.apps};Button(role:.destructive){store.saved.profiles.removeAll{$0.id==p.id}}label:{Image(systemName:"trash")}.help(store.text("删除配置 %@",p.name)).accessibilityLabel(store.text("删除配置 %@",p.name))}};HStack {Button(store.text("导入…")){store.importProfile()};Button(store.text("导出…")){store.exportProfile()}} }
             } else {
-                card("快捷键设置") {Picker("字符",selection:$store.saved.characters){ForEach(["数字和字母","仅数字","仅字母"],id:\.self){Text($0)}};Picker("键盘布局",selection:$store.saved.keyboard){ForEach(["全键盘","左手区域","右手区域"],id:\.self){Text($0)}}}
-                if store.saved.mode == "切换器" {card("过滤 App") {entries(store.saved.excluded,target:"过滤");Button("添加要排除的 App…"){store.pick("过滤")}}}
+                card("快捷键设置") {Picker(store.text("字符"),selection:$store.saved.characters){ForEach(["数字和字母","仅数字","仅字母"],id:\.self){Text(store.text($0)).tag($0)}};Picker(store.text("键盘布局"),selection:$store.saved.keyboard){ForEach(["全键盘","左手区域","右手区域"],id:\.self){Text(store.text($0)).tag($0)}}}
+                if store.saved.mode == "切换器" {card("过滤 App") {entries(store.saved.excluded,target:"过滤");Button(store.text("添加要排除的 App…")){store.pick("过滤")}}}
             }
         }
     }
     func entries(_ list:[Entry],target:String)->some View {
-        VStack(spacing:8) {if list.isEmpty {Text("尚未添加 App").font(.caption).foregroundStyle(.secondary).padding(10)}
-            ForEach(list) {entry in HStack {Image(nsImage:NSWorkspace.shared.icon(forFile:entry.path)).resizable().frame(width:28,height:28);Text(entry.name);Spacer();if target=="自定义" {TextField("按键",text:Binding(get:{store.saved.apps.first{$0.path==entry.path}?.key ?? ""},set:{new in let key=new.uppercased();guard key.isEmpty || (key.count == 1 && "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".contains(key)) else {store.message="请输入单个英文字母或数字。";return};guard !store.saved.apps.contains(where:{$0.path != entry.path && $0.key==key && !key.isEmpty}) else {store.message="按键 \(key) 已被其他 App 使用，请选择其他按键。";return};if let i=store.saved.apps.firstIndex(where:{$0.path==entry.path}){store.saved.apps[i].key=key}})).frame(width:45).textFieldStyle(.roundedBorder).focused($shortcutFocused)};Button {switch target{case "静默模式":store.saved.silent.removeAll{$0.path==entry.path};case "过滤":store.saved.excluded.removeAll{$0.path==entry.path};default:store.saved.apps.removeAll{$0.path==entry.path}}}label:{Image(systemName:"minus.circle").foregroundStyle(.secondary)}.buttonStyle(.borderless).help("移除 \(entry.name)").accessibilityLabel("移除 \(entry.name)")}.padding(6).background(.primary.opacity(0.025),in:RoundedRectangle(cornerRadius:7)).onDrag {dragID=entry.path;return NSItemProvider(object:entry.path as NSString)}.onDrop(of:[.text],isTargeted:nil){_ in guard target=="自定义",let dragID,let from=store.saved.apps.firstIndex(where:{$0.path==dragID}),let to=store.saved.apps.firstIndex(where:{$0.path==entry.path}) else{return false};store.saved.apps.move(fromOffsets:IndexSet(integer:from),toOffset:to>from ? to+1 : to);return true} }
+        VStack(spacing:8) {if list.isEmpty {Text(store.text("尚未添加 App")).font(.caption).foregroundStyle(.secondary).padding(10)}
+            ForEach(list) {entry in HStack {Image(nsImage:NSWorkspace.shared.icon(forFile:entry.path)).resizable().frame(width:28,height:28);Text(entry.name);Spacer();if target=="自定义" {TextField(store.text("按键"),text:Binding(get:{store.saved.apps.first{$0.path==entry.path}?.key ?? ""},set:{new in let key=new.uppercased();guard key.isEmpty || (key.count == 1 && "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".contains(key)) else {store.message=store.text("请输入单个英文字母或数字。");return};guard !store.saved.apps.contains(where:{$0.path != entry.path && $0.key==key && !key.isEmpty}) else {store.message=store.text("按键 %@ 已被其他 App 使用，请选择其他按键。",key);return};if let i=store.saved.apps.firstIndex(where:{$0.path==entry.path}){store.saved.apps[i].key=key}})).frame(width:45).textFieldStyle(.roundedBorder).focused($shortcutFocused)};Button {switch target{case "静默模式":store.saved.silent.removeAll{$0.path==entry.path};case "过滤":store.saved.excluded.removeAll{$0.path==entry.path};default:store.saved.apps.removeAll{$0.path==entry.path}}}label:{Image(systemName:"minus.circle").foregroundStyle(.secondary)}.buttonStyle(.borderless).help(store.text("移除 %@",entry.name)).accessibilityLabel(store.text("移除 %@",entry.name))}.padding(6).background(.primary.opacity(0.025),in:RoundedRectangle(cornerRadius:7)).onDrag {dragID=entry.path;return NSItemProvider(object:entry.path as NSString)}.onDrop(of:[.text],isTargeted:nil){_ in guard target=="自定义",let dragID,let from=store.saved.apps.firstIndex(where:{$0.path==dragID}),let to=store.saved.apps.firstIndex(where:{$0.path==entry.path}) else{return false};store.saved.apps.move(fromOffsets:IndexSet(integer:from),toOffset:to>from ? to+1 : to);return true} }
         }
     }
 }
 
 class Delegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    let store=Store(); var window:NSWindow!;var status:NSStatusItem?; var screenshot:String?
+    let store=Store(); var window:NSWindow!;var status:NSStatusItem?; var screenshot:String?; var languageObserver: AnyCancellable?
     func applicationDidFinishLaunching(_ notification:Notification) {
         let args=CommandLine.arguments
         if let i=args.firstIndex(of:"--screenshot"),args.count>i+1{screenshot=args[i+1]}
         NSApp.setActivationPolicy(.regular)
         NSApp.applicationIconImage = AppArtwork.icon
-        let mainMenu = NSMenu()
-        let appItem = NSMenuItem()
-        let appMenu = NSMenu()
-        appMenu.addItem(withTitle:"打开设置…",action:#selector(openSettings),keyEquivalent:",").target = self
-        appMenu.addItem(.separator())
-        appMenu.addItem(withTitle:"退出quick",action:#selector(quit),keyEquivalent:"q").target = self
-        appItem.submenu = appMenu; mainMenu.addItem(appItem); NSApp.mainMenu = mainMenu
         window=NSWindow(contentRect:NSRect(x:0,y:0,width:1000,height:740),styleMask:[.titled,.closable,.miniaturizable,.resizable,.fullSizeContentView],backing:.buffered,defer:false)
         window.delegate = self
         window.title="quick";window.titleVisibility = .hidden;window.titlebarAppearsTransparent=true;window.isReleasedWhenClosed=false
@@ -686,9 +692,30 @@ class Delegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         status?.button?.toolTip = "quick"
         status?.button?.setAccessibilityLabel("quick")
         status?.isVisible = store.saved.showStatus
-        let menu=NSMenu();menu.addItem(withTitle:"打开设置…",action:#selector(openSettings),keyEquivalent:",").target=self;menu.addItem(withTitle:"启用 / 暂停",action:#selector(toggle),keyEquivalent:"").target=self;menu.addItem(.separator());menu.addItem(withTitle:"退出quick",action:#selector(quit),keyEquivalent:"q").target=self;status?.menu=menu
+        updateMenus()
+        languageObserver = store.$saved.map { $0.language }.removeDuplicates().dropFirst().sink { [weak self] _ in
+            // @Published emits before the new settings are assigned.
+            DispatchQueue.main.async { self?.updateMenus() }
+        }
         Timer.scheduledTimer(withTimeInterval:0.5,repeats:true){[weak self]_ in guard let self else{return};self.status?.isVisible=self.store.saved.showStatus}
         if let screenshot { var frames=0;Timer.scheduledTimer(withTimeInterval:1.0/60,repeats:true){[weak self]t in frames+=1;guard frames>=120,let self,let view=self.window.contentView else{return};t.invalidate();self.window.displayIfNeeded();guard let bitmap=view.bitmapImageRepForCachingDisplay(in:view.bounds) else{exit(2)};view.cacheDisplay(in:view.bounds,to:bitmap);guard let png=bitmap.representation(using:.png,properties:[:]) else{exit(3)};do{try FileManager.default.createDirectory(at:URL(fileURLWithPath:screenshot).deletingLastPathComponent(),withIntermediateDirectories:true);try png.write(to:URL(fileURLWithPath:screenshot));print("Screenshot saved: \(screenshot)")}catch{print(error);exit(4)};NSApp.terminate(nil)} }
+    }
+    func updateMenus() {
+        let mainMenu = NSMenu()
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle:store.text("打开设置…"),action:#selector(openSettings),keyEquivalent:",").target = self
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle:store.text("退出quick"),action:#selector(quit),keyEquivalent:"q").target = self
+        appItem.submenu = appMenu
+        mainMenu.addItem(appItem)
+        NSApp.mainMenu = mainMenu
+        let menu = NSMenu()
+        menu.addItem(withTitle:store.text("打开设置…"),action:#selector(openSettings),keyEquivalent:",").target = self
+        menu.addItem(withTitle:store.text("启用 / 暂停"),action:#selector(toggle),keyEquivalent:"").target = self
+        menu.addItem(.separator())
+        menu.addItem(withTitle:store.text("退出quick"),action:#selector(quit),keyEquivalent:"q").target = self
+        status?.menu = menu
     }
     func windowWillClose(_ notification:Notification) {
         guard let closingWindow = notification.object as? NSWindow, closingWindow === window else { return }
