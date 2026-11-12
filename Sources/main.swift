@@ -55,6 +55,7 @@ final class Store: ObservableObject {
     @Published var page = "配置"; @Published var enabled = true; @Published var selected = 0; @Published var showing = false
     @Published var editingShortcut = false
     @Published var globalShortcutsAvailable = false
+    @Published var loginItemStatus = SMAppService.mainApp.status
     @Published var message = ""; @Published var revision = 0
     var overlay: NSPanel?; var timer: Timer?; var hideTimer: Timer?; var held = false; var doublePressWindow = DoublePressWindow()
     var global: Any?; var local: Any?; var eventTap: CFMachPort?; var eventSource: CFRunLoopSource?; var monitorRetry: Timer?
@@ -81,6 +82,26 @@ final class Store: ObservableObject {
     var fallbackHotKeys: [UInt16: EventHotKeyRef] = [:]
     var fallbackCharacters: [UInt16: String] = [:]
     func persist() { if let data = try? JSONEncoder().encode(saved) { UserDefaults.standard.set(data, forKey: defaultsKey) } }
+    func refreshLoginItemStatus() { loginItemStatus = SMAppService.mainApp.status }
+    func setLaunchAtLogin(_ enabled: Bool) {
+        let service = SMAppService.mainApp
+        do {
+            if enabled {
+                if service.status != .enabled && service.status != .requiresApproval { try service.register() }
+            } else if service.status != .notRegistered {
+                try service.unregister()
+            }
+            refreshLoginItemStatus()
+            if enabled && loginItemStatus == .requiresApproval {
+                SMAppService.openSystemSettingsLoginItems()
+            } else if enabled && loginItemStatus != .enabled {
+                message = "未能启用登录时启动，请确认 quick 位于“应用程序”文件夹中，然后重试。"
+            }
+        } catch {
+            refreshLoginItemStatus()
+            message = "无法\(enabled ? "启用" : "关闭")登录时启动：\(error.localizedDescription)"
+        }
+    }
     var keys: [String] {
         let base = saved.characters == "仅字母" ? "ABCDEFGHIJKLMNOPQRSTUVWXYZ" : saved.characters == "仅数字" ? "1234567890" : "1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         return Array((saved.keyboard == "左手区域" ? "12345QWERTASDFGZXCVB" : saved.keyboard == "右手区域" ? "67890YUIOPHJKLNM" : base)).map(String.init).filter { base.contains($0) }
@@ -426,6 +447,8 @@ struct ContentView: View {
             }.frame(maxWidth:.infinity).background(Color(nsColor:.windowBackgroundColor).opacity(0.88))
         }.frame(minWidth:860,minHeight:650)
         .onChange(of: shortcutFocused) { _, focused in store.editingShortcut = focused }
+        .onAppear { store.refreshLoginItemStatus() }
+        .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in store.refreshLoginItemStatus() }
         .onDisappear { store.editingShortcut = false }
         .alert("提示",isPresented:Binding(get:{!store.message.isEmpty},set:{if !$0 {store.message=""}})) { Button("好") {store.message=""} } message:{ Text(store.message) }
     }
@@ -454,7 +477,14 @@ struct ContentView: View {
             card("切换统计") { HStack(alignment:.firstTextBaseline) { Text("\(store.saved.count)").font(.system(size:48,weight:.light,design:.rounded)); Text("次切换").foregroundStyle(.secondary) }; if store.saved.count==0 {Text("开始使用后，你的切换记录会显示在这里。").foregroundStyle(.secondary)}; ForEach(store.saved.counts.sorted{$0.value > $1.value},id:\.key) { p,c in HStack {Text(Entry(path:p,key:"").name).frame(width:130,alignment:.leading); GeometryReader {g in RoundedRectangle(cornerRadius:4).fill(.blue.gradient).frame(width:max(4,g.size.width*CGFloat(c)/CGFloat(max(store.saved.count,1))))}.frame(height:12);Text("\(c)") } } }
         case "关于":card("quick") { Image(nsImage:AppArtwork.icon).resizable().frame(width:80,height:80); Text("Swift 原生应用").font(.title2); Text("为 macOS 27 构建，使用系统 Liquid Glass 材质。\n独立重建的应用切换工具，未使用原应用品牌素材。").foregroundStyle(.secondary); Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.2")").font(.caption) }
         default:
-            card("启动与菜单栏") { Toggle("显示菜单栏图标",isOn:$store.saved.showStatus); Toggle("登录时启动",isOn:Binding(get:{SMAppService.mainApp.status == .enabled},set:{on in do {if on {try SMAppService.mainApp.register()} else {try SMAppService.mainApp.unregister()}} catch {store.message=error.localizedDescription}})) }
+            card("启动与菜单栏") {
+                Toggle("显示菜单栏图标",isOn:$store.saved.showStatus)
+                Toggle("登录时启动",isOn:Binding(get:{store.loginItemStatus == .enabled},set:{store.setLaunchAtLogin($0)}))
+                if store.loginItemStatus == .requiresApproval {
+                    Text("已注册登录项，等待系统批准。请在系统设置的“登录项与扩展”中允许 quick 登录时启动。").font(.caption).foregroundStyle(.secondary)
+                    Button("打开登录项设置") { SMAppService.openSystemSettingsLoginItems() }
+                }
+            }
             card("系统权限") { Label(store.globalShortcutsAvailable ? "全局快捷键已就绪" : "长按显示浮层后，可使用按键切换",systemImage:store.globalShortcutsAvailable ? "checkmark.shield" : "keyboard"); Text("辅助功能授权后，可恢复并前置目标主窗口、设置键盘焦点，并直接使用快捷键；授权状态会自动更新。").font(.caption).foregroundStyle(.secondary); Button("打开辅助功能设置") {NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)} }
         }
     }
