@@ -42,9 +42,14 @@ let delegate = Delegate()
 delegate.store.saved.language = .english
 delegate.updateMenus()
 precondition(app.mainMenu?.items.first?.submenu?.items.first?.title == "Open Settings…")
+let updateItem = app.mainMenu!.items.first!.submenu!.items[1]
+precondition(updateItem.title == "Check for Updates…")
+precondition(updateItem.target === delegate.updaterController)
+precondition(updateItem.action == #selector(SPUStandardUpdaterController.checkForUpdates(_:)))
 delegate.store.saved.language = .simplifiedChinese
 delegate.updateMenus()
 precondition(app.mainMenu?.items.first?.submenu?.items.first?.title == "打开设置…")
+precondition(app.mainMenu?.items.first?.submenu?.items[1].title == "检查更新…")
 print("语言检查通过：旧配置兼容、双向切换、持久化、快捷键和自定义名称保留、格式占位符、菜单翻译")
 
 if CommandLine.arguments.count > 1 {

@@ -15,6 +15,7 @@ quick is a native macOS app switcher built with Swift, SwiftUI, and AppKit, feat
 - **Switching behavior**: Adjust the display delay and auto-hide timeout, double-press the activation key to pause or enable quick, and hide the frontmost app when selecting it again.
 - **Silent apps**: Hide the switcher in selected apps and optionally disable switching shortcuts there as well.
 - **Interface languages**: Choose Simplified Chinese or English in **General → Language**. The interface and menus update immediately, and your choice is saved.
+- **Automatic updates**: Sparkle checks for new versions periodically and guides downloading, installation, and relaunch. Choose **Check for Updates…** from either app menu to check manually.
 - **Menu bar and launch at login**: Access quick from the menu bar. Launch at login uses macOS login item management and requires system acceptance of the registration.
 - **Local usage statistics**: Track total switches and switches per app.
 
@@ -44,7 +45,7 @@ Without Accessibility permission, you can still hold the activation key to show 
 
 ## Building locally
 
-Xcode 27.2 is recommended, including its macOS SDK and Swift toolchain. The Swift package manifest requires Swift tools 6.2 or later. There are no third-party package dependencies.
+Xcode 27.2 is recommended, including its macOS SDK and Swift toolchain. The Swift package manifest requires Swift tools 6.2 or later. The pinned Sparkle update framework is fetched through Swift Package Manager.
 
 Run from the project root:
 
@@ -77,9 +78,27 @@ The workflow uses GitHub's [`xcode-27` Apple Silicon runner](https://github.com/
 1. Validate the tag format and run the existing mechanics regression checks.
 2. Build the Release app, write the tag version into its bundle, and apply a fresh ad-hoc signature.
 3. Create and verify the DMG, then generate its SHA-256 checksum file.
-4. Save the Actions build artifacts, create a GitHub Release, and upload the installation package and checksum file.
+4. Sign the DMG using the Sparkle Ed25519 key and generate `appcast.xml`.
+5. Save the Actions build artifacts, create a GitHub Release, and upload the installation package, checksum file, and appcast.
 
-No additional secrets are required; publishing uses GitHub's automatically provided `GITHUB_TOKEN`. Enable Actions for the repository and allow the workflow to use `contents: write`. The runner is currently in preview; consult GitHub's documentation for its availability. Rerunning the workflow for the same tag replaces the corresponding release assets.
+Publishing uses GitHub's automatically provided `GITHUB_TOKEN` and requires the `SPARKLE_PRIVATE_KEY` Actions secret described below. Enable Actions for the repository and allow the workflow to use `contents: write`. The runner is currently in preview; consult GitHub's documentation for its availability. Rerunning the workflow for the same tag replaces the corresponding release assets.
+
+## Automatic update setup
+
+The feed is `https://github.com/imkratos/quick/releases/latest/download/appcast.xml`. The feed URL and public key are stored in `Resources/Updater.plist`. On the second launch, Sparkle asks permission to check automatically; when enabled, the default interval is 24 hours. Users confirm installation and may skip or postpone updates. Downloaded updates are verified using Ed25519 signatures.
+
+Before the first update-enabled release:
+
+1. Run `swift package resolve`. Sparkle's tools are in `.build/artifacts/sparkle/Sparkle/bin/`. The local key is already stored in the login Keychain under account `quick`. Use `generate_keys --account quick` to create a key only when setting up a new key pair. **If this project already has a public key, use its matching original private key. Do not regenerate it.**
+2. Export the key with `generate_keys --account quick -x /secure/location/quick-sparkle-private-key`. Never commit this file.
+3. Add its entire contents as the repository Actions secret `SPARKLE_PRIVATE_KEY` under **Settings → Secrets and variables → Actions**. Keep a secure backup and delete the temporary export.
+4. Commit and push a higher `vX.Y.Z` tag. The workflow publishes both the DMG and `appcast.xml`; missing keys or signing failures stop the release.
+
+To generate an appcast locally after packaging, run `SPARKLE_PRIVATE_KEY_FILE=/secure/location/quick-sparkle-private-key bash scripts/generate-appcast.sh X.Y.Z`.
+
+Keep the public key stable once distributed. Ad-hoc builds cannot use Developer ID to recover from a lost update key. If moving repositories, update both `Resources/Updater.plist` and `scripts/generate-appcast.sh`.
+
+Existing versions need one manual installation of an update-enabled build. The feed becomes available with the first published `appcast.xml`; checks will report a retrieval failure until then. Run quick from Applications, since an app on a read-only DMG cannot update in place.
 
 ## Development and validation
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import Sparkle
 import Combine
 import AppKit
 import Carbon
@@ -614,7 +615,7 @@ struct ContentView: View {
             card("静默名单") { Text(store.text("当前 App 在此列表中时，不显示切换器。")).font(.caption).foregroundStyle(.secondary); entries(store.saved.silent,target:"静默模式"); Button(store.text("添加 App…"),systemImage:"plus") {store.pick("静默模式")}; Toggle(store.text("同时禁用这些 App 内的切换快捷键"),isOn:$store.saved.disableSilentKeys) }
         case "用量":
             card("切换统计") { HStack(alignment:.firstTextBaseline) { Text("\(store.saved.count)").font(.system(size:48,weight:.light,design:.rounded)); Text(store.text("次切换")).foregroundStyle(.secondary) }; if store.saved.count==0 {Text(store.text("开始使用后，你的切换记录会显示在这里。")).foregroundStyle(.secondary)}; ForEach(store.saved.counts.sorted{$0.value > $1.value},id:\.key) { p,c in HStack {Text(Entry(path:p,key:"").name).frame(width:130,alignment:.leading); GeometryReader {g in RoundedRectangle(cornerRadius:4).fill(.blue.gradient).frame(width:max(4,g.size.width*CGFloat(c)/CGFloat(max(store.saved.count,1))))}.frame(height:12);Text("\(c)") } } }
-        case "关于":card("quick") { Image(nsImage:AppArtwork.icon).resizable().frame(width:80,height:80); Text(store.text("Swift 原生应用")).font(.title2); Text(store.text("为 macOS 27 构建，使用系统 Liquid Glass 材质。\n独立重建的应用切换工具，未使用原应用品牌素材。")).foregroundStyle(.secondary); Text(store.text("版本 %@",Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.2")).font(.caption) }
+        case "关于":card("quick") { Image(nsImage:AppArtwork.icon).resizable().frame(width:80,height:80); Text(store.text("Swift 原生应用")).font(.title2); Text(store.text("为 macOS 27 构建，使用系统 Liquid Glass 材质。\n独立重建的应用切换工具，未使用原应用品牌素材。")).foregroundStyle(.secondary); Text(store.text("版本 %@",Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.6")).font(.caption) }
         default:
             card("语言") {
                 Picker(store.text("语言"),selection:Binding(get:{store.language},set:{store.saved.language=$0})) {
@@ -669,6 +670,7 @@ struct ContentView: View {
 }
 
 class Delegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    let updaterController = SPUStandardUpdaterController(startingUpdater:false,updaterDelegate:nil,userDriverDelegate:nil)
     let store=Store(); var window:NSWindow!;var status:NSStatusItem?; var screenshot:String?; var languageObserver: AnyCancellable?
     func applicationDidFinishLaunching(_ notification:Notification) {
         let args=CommandLine.arguments
@@ -692,6 +694,7 @@ class Delegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         status?.button?.toolTip = "quick"
         status?.button?.setAccessibilityLabel("quick")
         status?.isVisible = store.saved.showStatus
+        if screenshot == nil { updaterController.startUpdater() }
         updateMenus()
         languageObserver = store.$saved.map { $0.language }.removeDuplicates().dropFirst().sink { [weak self] _ in
             // @Published emits before the new settings are assigned.
@@ -705,6 +708,7 @@ class Delegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle:store.text("打开设置…"),action:#selector(openSettings),keyEquivalent:",").target = self
+        appMenu.addItem(withTitle:store.text("检查更新…"),action:#selector(SPUStandardUpdaterController.checkForUpdates(_:)),keyEquivalent:"").target = updaterController
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle:store.text("退出quick"),action:#selector(quit),keyEquivalent:"q").target = self
         appItem.submenu = appMenu
@@ -713,6 +717,7 @@ class Delegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle:store.text("打开设置…"),action:#selector(openSettings),keyEquivalent:",").target = self
         menu.addItem(withTitle:store.text("启用 / 暂停"),action:#selector(toggle),keyEquivalent:"").target = self
+        menu.addItem(withTitle:store.text("检查更新…"),action:#selector(SPUStandardUpdaterController.checkForUpdates(_:)),keyEquivalent:"").target = updaterController
         menu.addItem(.separator())
         menu.addItem(withTitle:store.text("退出quick"),action:#selector(quit),keyEquivalent:"q").target = self
         status?.menu = menu

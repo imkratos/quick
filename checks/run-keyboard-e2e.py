@@ -14,6 +14,8 @@ try:
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 except BlockingIOError:
     sys.exit("已有跨应用键盘检查正在运行，请等待其完成。")
+subprocess.run(["swift", "package", "resolve"], cwd=root, check=True)
+framework = next((root / ".build/artifacts").glob("sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64"))
 source = (root / "Sources/main.swift").read_text().split("let app=NSApplication.shared")[0]
 with tempfile.TemporaryDirectory(prefix="glassswitch-keyboard-") as directory:
     work = Path(directory)
@@ -32,6 +34,6 @@ with tempfile.TemporaryDirectory(prefix="glassswitch-keyboard-") as directory:
     main = work / "main.swift"
     main.write_text(source + (root / "checks/keyboard-e2e.swift").read_text())
     binary = work / "check"
-    subprocess.run(["swiftc", "-swift-version", "5", "-disable-sandbox", str(root / "Sources/Mechanics.swift"), str(root / "Sources/Localization.swift"), str(main), "-o", str(binary)], check=True)
+    subprocess.run(["swiftc", "-swift-version", "5", "-disable-sandbox", "-F", str(framework), "-framework", "Sparkle", "-Xlinker", "-rpath", "-Xlinker", str(framework), str(root / "Sources/Mechanics.swift"), str(root / "Sources/Localization.swift"), str(main), "-o", str(binary)], check=True)
     for mode in sys.argv[1:] or ("fallback", "tap"):
         subprocess.run([str(binary), str(work), mode, str(root / "quick.app")], check=True, timeout=45)

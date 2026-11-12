@@ -2,9 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-version="${1:-0.0.2}"
+version="${1:-0.0.6}"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo '版本号必须使用 X.Y.Z 格式，例如 0.0.2。' >&2
+  echo '版本号必须使用 X.Y.Z 格式，例如 0.0.6。' >&2
   exit 1
 fi
 if [[ "$(uname -m)" != arm64 ]]; then

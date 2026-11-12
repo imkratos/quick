@@ -123,6 +123,7 @@ enum AppLanguage: String, Codable, CaseIterable {
         "语言": "Language",
         "按住 %@ 即刻切换": "Hold %@ to switch instantly",
         "%@ + 对应按键": "%@ + matching key",
+        "检查更新…": "Check for Updates…",
         "版本 %@": "Version %@",
         "%@ 模式": "%@ Mode",
         "按住 %@": "Hold %@",

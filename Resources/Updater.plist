@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>SUFeedURL</key>
+	<string>https://github.com/imkratos/quick/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>mSV3ZCX7f5O8u0k05ThLVEplLz15FuC8WqXHGtf6CAo=</string>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+</dict>
+</plist>
